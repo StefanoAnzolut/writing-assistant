@@ -1,56 +1,17 @@
 <script setup lang="ts">
 import { useChat } from 'ai/vue'
-
 const { messages, input, handleSubmit } = useChat({
   headers: { 'Content-Type': 'application/json' },
 })
+const editorContent = ref('')
 
-</script>
-
-<!-- 
-<script lang="ts">
-export default {
-  // `setup` is a special hook dedicated for the Composition API.
-  setup() {
-    let editor_content = ref('')
-
-    function updateEditorContent(newData: string) {
-      editor_content = ref(newData)
-    }
-    function submit() {
-      console.log(editor_content.value)
-      console.log(input.value)
-      handleSubmit(input.value + "\n" + editor_content.value)
-    }
-    return {
-        editor_content,
-        submit,
-        updateEditorContent
-    }
-  }
-}
-</script> -->
-
-<script lang="ts">
-
-export default {
-    data() {
-        return {
-            editor_content: '',
-        }  
-    },
-    methods: {
-        onEditorUpdate(newData: string) {
-            console.log(this.editor_content)
-            this.editor_content = newData
-        },
-        submit() {
-            console.log(this.editor_content)
-            console.log(input)
-            handleSubmit(input + "\n" + this.editor_content)
-        },
-    }
-}
+function submit(e: any): void {
+    const inputValue = input.value;
+    if (!inputValue)
+      return;
+    input.value = inputValue.concat(editorContent.value);
+    handleSubmit(e);
+};
 </script>
 
 <template>
@@ -66,8 +27,9 @@ export default {
                             {{ m.content }}
                             </div>
 
-                            <form @submit="handleSubmit">
+                            <form @submit="submit">
                             <input
+                                id="chat-input"
                                 class="chat-input"
                                 v-model="input"
                                 placeholder="Say something..."
@@ -82,7 +44,7 @@ export default {
                 <div class="card">
                     <h2 class="card-title">Editor</h2>
                     <div class="card-text">
-                        <ckeditor @update="onEditorUpdate"/>
+                        <ckeditor v-model="editorContent" />
                     </div>
                 </div>
             </v-col>

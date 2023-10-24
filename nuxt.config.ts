@@ -8,9 +8,12 @@ export default defineNuxtConfig({
     '@mdi/font/css/materialdesignicons.min.css',
   ],
   devtools: { enabled: true },
-  runtimeConfig: {
-    openai: {
-      apiKey: process.env.OPENAI_API_KEY,
-    },
-  },
+  vite: {
+    vue: {
+        script: {
+            defineModel: true,
+            propsDestructure: true
+        }
+    }
+  }
 })
