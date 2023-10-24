@@ -5,9 +5,9 @@ import { CreateChatCompletionRequestMessage } from 'openai/resources/chat';
 
 export default defineLazyEventHandler(async () => {
   const apiKey = process.env.AZURE_API_KEY;
-  console.log(apiKey)
   const resource = 'mt-gpt4at';
   const model = 'gpt35';
+  console.log("Current model is: ", model)
   if (!apiKey) throw new Error('Missing OpenAI API key');
 
   // Azure OpenAI requires a custom baseURL, api-version query param, and api-key header.

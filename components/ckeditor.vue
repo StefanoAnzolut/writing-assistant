@@ -14,7 +14,6 @@
   }
 </script>
 
-
 <template>
   <client-only>
       <CKEditor 

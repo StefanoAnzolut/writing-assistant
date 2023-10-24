@@ -6,12 +6,23 @@ const { messages, input, handleSubmit } = useChat({
 const editorContent = ref('')
 
 function submit(e: any): void {
-    const inputValue = input.value;
-    if (!inputValue)
-      return;
-    input.value = inputValue.concat(editorContent.value);
+    input.value = input.value.concat(editorContent.value);
     handleSubmit(e);
 };
+
+watch(messages, (newData): void => {
+    console.log(newData)
+    messages.value.forEach(function (message, idx, array) {
+        if (message.role === 'assistant' && idx === array.length - 1){
+            if (editorContent.value.includes("<p>Suggestion: ")){
+                //remove all previous assistant responses that include the string above and end with <p> tag
+                editorContent.value = editorContent.value.replace(/<p>Suggestion: .*<\/p>/g, `<p>Suggestion:  ${message.content} </p>`);
+            } else {
+                editorContent.value = editorContent.value.concat(`<p></p><p>Suggestion: ${message.content} </p>`);
+            }
+        }
+    });
+})
 </script>
 
 <template>
@@ -23,7 +34,7 @@ function submit(e: any): void {
                     <div class="card-text">
                         <div class="chat">
                             <div v-for="m in messages" key="m.id" class="chat-message">
-                            {{ m.role === 'user' ? 'User: ' : 'AI: ' }}
+                            {{ m.role === 'user' ? 'User: ' : 'Writing Assistant: ' }}
                             {{ m.content }}
                             </div>
 
@@ -50,7 +61,6 @@ function submit(e: any): void {
             </v-col>
         </v-row>
     </v-container>
-  
 </template>
 
 <style scoped>
