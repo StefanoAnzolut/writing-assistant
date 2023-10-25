@@ -12,6 +12,9 @@ export default defineNuxtConfig({
     port: 3000,
     host: '0.0.0.0'
   },
+  plugins: [
+    '~/plugins/vuetify.js',
+  ],
   vite: {
     vue: {
         script: {

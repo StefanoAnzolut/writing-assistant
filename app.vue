@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { useChat } from 'ai/vue'
+import ContextMenu from '@imengyu/vue3-context-menu'
+import '@imengyu/vue3-context-menu/lib/vue3-context-menu.css'
+
 const { messages, input, handleSubmit } = useChat({
   headers: { 'Content-Type': 'application/json' },
 })
@@ -9,6 +12,15 @@ function submit(e: any): void {
     input.value = input.value.concat(editorContent.value);
     handleSubmit(e);
 };
+
+function submitSelected(e: any, prompt: string){
+    const selected = window.getSelection();
+    if (selected.toString() === ""){
+        return
+    }
+    input.value = input.value.concat(prompt + selected);
+    handleSubmit(e);
+}
 
 watch(messages, (newData): void => {
     console.log(newData)
@@ -23,6 +35,72 @@ watch(messages, (newData): void => {
         }
     });
 })
+
+function onContextMenu(e : MouseEvent) {
+    //prevent the browser's default menu
+    e.preventDefault();
+    //show our menu
+    ContextMenu.showContextMenu({
+      x: e.x,
+      y: e.y,
+      items: [
+        {
+          label: "Summarize",
+          onClick: () => {
+            submitSelected(e, "Summarize: ");
+          }
+        },
+        {
+            label: "Check spelling",
+            onClick: () => {
+              submitSelected(e, "Check spelling: ");
+          }
+        },
+        {
+            label: "Reformulate",
+            onClick: () => {
+              submitSelected(e, "Reformulate: ");
+          }
+        },
+        {
+            label: "Adapt to scientific style",
+            onClick: () => {
+              submitSelected(e, "Adapt to scientific style: ");
+          }
+        },
+        {
+            label: "Concise",
+            onClick: () => {
+              submitSelected(e, "Concise: ");
+          }
+        },
+        {
+            label: "Add structure",
+            onClick: () => {
+              submitSelected(e, "Add structure: ");
+          }
+        },
+        {
+            label: "Define",
+            onClick: () => {
+              submitSelected(e, "Define: ");
+            }
+        },
+        {
+            label: "Find synonyms",
+            onClick: () => {
+              submitSelected(e, "Find synonyms: ");
+            }
+        },
+        {
+            label: "Give writing advice",
+            onClick: () => {
+              submitSelected(e, "Give writing advice: ");
+            }
+        },
+      ]
+    });
+  }
 </script>
 
 <template>
@@ -54,8 +132,8 @@ watch(messages, (newData): void => {
             <v-col cols="9">
                 <div class="card">
                     <h2 class="card-title">Editor</h2>
-                    <div class="card-text">
-                        <ckeditor v-model="editorContent" />
+                    <div class="card-text" @contextmenu="onContextMenu($event)">
+                        <ckeditor v-model="editorContent"/>
                     </div>
                 </div>
             </v-col>
