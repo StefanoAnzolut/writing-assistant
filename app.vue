@@ -134,7 +134,7 @@ function onContextMenu(e : MouseEvent) {
             <v-col cols="12">
                 <h1>
                     <a href="#">
-                        <img src=favicon.svg alt="Writing Assistant">
+                        <img src=/favicon.svg alt="Writing Assistant">
                     </a>
                 </h1>
             </v-col>
