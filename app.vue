@@ -3,13 +3,31 @@ import { useChat } from 'ai/vue'
 import ContextMenu from '@imengyu/vue3-context-menu'
 import '@imengyu/vue3-context-menu/lib/vue3-context-menu.css'
 
+useHead({
+  title: 'Writing Assistant',
+  meta: [
+    { name: 'An AI-powered writing assistant'}
+  ],
+})
+
 const { messages, input, handleSubmit } = useChat({
   headers: { 'Content-Type': 'application/json' },
 })
 const editorContent = ref('')
+const skipLink = ref()
+
+const chatHistory = reactive([]);
+
+function updateRefs(el, index) {
+  chatHistory[index] = el;
+}
+
+
 
 function submit(e: any): void {
-    input.value = input.value.concat(editorContent.value);
+    if (input.value === "") {
+        input.value = input.value.concat(editorContent.value);
+    }
     handleSubmit(e);
 };
 
@@ -29,8 +47,10 @@ watch(messages, (newData): void => {
             if (editorContent.value.includes("<p>Suggestion: ")){
                 //remove all previous assistant responses that include the string above and end with <p> tag
                 editorContent.value = editorContent.value.replace(/<p>Suggestion: .*<\/p>/g, `<p>Suggestion:  ${message.content} </p>`);
+                chatHistory[chatHistory.length - 1].focus();
             } else {
                 editorContent.value = editorContent.value.concat(`<p></p><p>Suggestion: ${message.content} </p>`);
+                chatHistory[chatHistory.length - 1].focus();
             }
         }
     });
@@ -47,55 +67,55 @@ function onContextMenu(e : MouseEvent) {
         {
           label: "Summarize",
           onClick: () => {
-            submitSelected(e, "Summarize: ");
+            submitSelected(e, "Summarize the following content and make it such that the response can immediately be added to a text editor: ");
           }
         },
         {
             label: "Check spelling",
             onClick: () => {
-              submitSelected(e, "Check spelling: ");
+              submitSelected(e, "Check spelling for the following content and make it such that the response can immediately be added to a text editor: ");
           }
         },
         {
             label: "Reformulate",
             onClick: () => {
-              submitSelected(e, "Reformulate: ");
+              submitSelected(e, "Reformulate the following content and make it such that the response can immediately be added to a text editor: ");
           }
         },
         {
             label: "Adapt to scientific style",
             onClick: () => {
-              submitSelected(e, "Adapt to scientific style: ");
+              submitSelected(e, "Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor: ");
           }
         },
         {
             label: "Concise",
             onClick: () => {
-              submitSelected(e, "Concise: ");
+              submitSelected(e, "Concise the following content and make it such that the response can immediately be added to a text editor: ");
           }
         },
         {
             label: "Add structure",
             onClick: () => {
-              submitSelected(e, "Add structure: ");
+              submitSelected(e, "Add structure to the following content and make it such that the response can immediately be added to a text editor: ");
           }
         },
         {
             label: "Define",
             onClick: () => {
-              submitSelected(e, "Define: ");
+              submitSelected(e, "Define the following content and make it such that the response can immediately be added to a text editor: ");
             }
         },
         {
             label: "Find synonyms",
             onClick: () => {
-              submitSelected(e, "Find synonyms: ");
+              submitSelected(e, "Find synonyms for the following content and make it such that the response can immediately be added to a text editor: ");
             }
         },
         {
             label: "Give writing advice",
             onClick: () => {
-              submitSelected(e, "Give writing advice: ");
+              submitSelected(e, "Give writing advice for the following content and make it such that the response can immediately be added to a text editor: ");
             }
         },
       ]
@@ -104,36 +124,48 @@ function onContextMenu(e : MouseEvent) {
 </script>
 
 <template>
+    <ul class="skip-links">
+        <li>
+            <a href="#chat-input" ref="skipLink" class="skip-link">Skip to chat</a>
+        </li>
+    </ul>
     <v-container>
+        <v-row>
+            <v-col cols="12">
+                <h1>
+                    <a href="#">
+                        <img src=favicon.svg alt="Writing Assistant">
+                    </a>
+                </h1>
+            </v-col>
+        </v-row>
         <v-row>
             <v-col cols="3">
                 <div class="card">
                     <h2 class="card-title">Chat</h2>
                     <div class="card-text">
                         <div class="chat">
-                            <div v-for="m in messages" key="m.id" class="chat-message">
-                            {{ m.role === 'user' ? 'User: ' : 'Writing Assistant: ' }}
-                            {{ m.content }}
+                            <div v-for="(m, i) in messages" :index="i" key="m.id" class="chat-message" :ref="(el) => updateRefs(el, i)" tabindex="-1">
+                                {{ m.role === 'user' ? 'User: ' : 'Writing Assistant: ' }}
+                                {{ m.content }}
                             </div>
-
                             <form @submit="submit">
                             <input
                                 id="chat-input"
                                 class="chat-input"
                                 v-model="input"
-                                placeholder="Say something..."
+                                placeholder="Send a message"
                             />
-
                             </form>
                         </div>
                     </div>
                 </div>
             </v-col>
-            <v-col cols="9">
+            <v-col cols="8">
                 <div class="card">
                     <h2 class="card-title">Editor</h2>
                     <div class="card-text" @contextmenu="onContextMenu($event)">
-                        <ckeditor v-model="editorContent"/>
+                        <ckeditor id="text-editor" v-model="editorContent"/>
                     </div>
                 </div>
             </v-col>
@@ -142,11 +174,30 @@ function onContextMenu(e : MouseEvent) {
 </template>
 
 <style scoped>
+.skip-link {
+  white-space: nowrap;
+  margin: 1em auto;
+  top: 0;
+  position: fixed;
+  left: 50%;
+  margin-left: -72px;
+  opacity: 0;
+}
+.skip-link:focus {
+  opacity: 1;
+  background-color: white;
+  padding: 0.5em;
+  border: 1px solid black;
+}
 .chat{
     width: 100%; 
     max-width: 28rem;
     background-color: antiquewhite;
     border: #000000 2px solid;
+    display: flex;
+    flex-direction: column;
+    max-height: 50vh;
+    overflow-y: scroll;
 }
 .chat-message{
     white-space: pre-wrap;
