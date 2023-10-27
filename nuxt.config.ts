@@ -15,12 +15,4 @@ export default defineNuxtConfig({
   plugins: [
     '~/plugins/vuetify.js',
   ],
-  vite: {
-    vue: {
-        script: {
-            defineModel: true,
-            propsDestructure: true
-        }
-    }
-  }
 })

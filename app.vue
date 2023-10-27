@@ -13,6 +13,14 @@ useHead({
 const { messages, input, handleSubmit } = useChat({
   headers: { 'Content-Type': 'application/json' },
 })
+
+let CKEditor: any
+let ClassicEditor = ref()
+if (process.client) {
+    CKEditor = defineAsyncComponent(() => import('@ckeditor/ckeditor5-vue').then(module => module.component))
+    import('@ckeditor/ckeditor5-build-classic').then(e => ClassicEditor.value = e.default)
+}
+
 const editorContent = ref('')
 const skipLink = ref()
 
@@ -40,16 +48,15 @@ function submitSelected(e: any, prompt: string){
     handleSubmit(e);
 }
 
-watch(messages, (newData): void => {
-    console.log(newData)
+watch(messages, (_): void => {
     messages.value.forEach(function (message, idx, array) {
         if (message.role === 'assistant' && idx === array.length - 1){
-            if (editorContent.value.includes("<p>Suggestion: ")){
-                //remove all previous assistant responses that include the string above and end with <p> tag
-                editorContent.value = editorContent.value.replace(/<p>Suggestion: .*<\/p>/g, `<p>Suggestion:  ${message.content} </p>`);
+            console.log(editorContent.value)
+            if (editorContent.value.includes("<p>-----</p><p>Suggestion: ")){
+                editorContent.value = editorContent.value.replace(/<p>-----<\/p><p>Suggestion: .*$/g, `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`);
                 chatHistory[chatHistory.length - 1].focus();
             } else {
-                editorContent.value = editorContent.value.concat(`<p></p><p>Suggestion: ${message.content} </p>`);
+                editorContent.value = editorContent.value.concat(`<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`);
                 chatHistory[chatHistory.length - 1].focus();
             }
         }
@@ -165,7 +172,13 @@ function onContextMenu(e : MouseEvent) {
                 <div class="card">
                     <h2 class="card-title">Editor</h2>
                     <div class="card-text" @contextmenu="onContextMenu($event)">
-                        <ckeditor id="text-editor" v-model="editorContent"/>
+                        <client-only>
+                            <CKEditor
+                                v-if="ClassicEditor"
+                                v-model="editorContent"
+                                :editor="ClassicEditor"
+                            ></CKEditor>
+                        </client-only>
                     </div>
                 </div>
             </v-col>
