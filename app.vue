@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { useChat } from 'ai/vue'
-import ContextMenu from '@imengyu/vue3-context-menu'
-import '@imengyu/vue3-context-menu/lib/vue3-context-menu.css'
 
 useHead({
   title: 'Writing Assistant',
@@ -23,6 +21,11 @@ if (process.client) {
 
 const editorContent = ref('')
 const skipLink = ref()
+const contextMenu = ref()
+const menuState = ref(0)
+const positionMenuRef = ref()
+const toggleMenuOffRef = ref()
+const toggleMenuOnRef = ref()
 
 const chatHistory = reactive([]);
 
@@ -30,7 +33,97 @@ function updateRefs(el, index) {
   chatHistory[index] = el;
 }
 
+if (process.client) {
+    contextMenu.value = document.querySelector(".context-menu");
+    console.log(contextMenu)
+    console.log(contextMenu.value)
 
+    // Event Listener for Close Context Menu when outside of menu clicked
+    document.addEventListener("click", (e) => {
+    var button = e.which || e.button;
+    if (button === 1) {
+        toggleMenuOff();
+    }
+    });
+    // Get the position of the right-click in window and returns the X and Y coordinates
+    function getPosition(e) {
+    var posx = 0;
+    var posy = 0;
+
+    if (!e) var e = window.event;
+
+    if (e.pageX || e.pageY) {
+        posx = e.pageX;
+        posy = e.pageY;
+    } else if (e.clientX || e.clientY) {
+        posx =
+        e.clientX +
+        document.body.scrollLeft +
+        document.documentElement.scrollLeft;
+        posy =
+        e.clientY + document.body.scrollTop + document.documentElement.scrollTop;
+    }
+
+    return {
+        x: posx,
+        y: posy
+    };
+    }
+    // Position the Context Menu in right position.
+    function positionMenu(event: Event) {
+    let clickCoords = getPosition(event);
+    let clickCoordsX = clickCoords.x;
+    let clickCoordsY = clickCoords.y;
+    if (contextMenu.value === null){
+        console.log(contextMenu.value);
+        return;
+    } 
+    let menuWidth = contextMenu.value.offsetWidth + 4;
+    let menuHeight = contextMenu.value.offsetHeight + 4;
+
+    let windowWidth = window.innerWidth;
+    let windowHeight = window.innerHeight;
+
+    if (windowWidth - clickCoordsX < menuWidth) {
+        contextMenu.value.style.left = windowWidth - menuWidth + "px";
+    } else {
+        contextMenu.value.style.left = clickCoordsX + "px";
+    }
+
+    if (windowHeight - clickCoordsY < menuHeight) {
+        contextMenu.value.style.top = windowHeight - menuHeight + "px";
+    } else {
+        contextMenu.value.style.top = clickCoordsY + "px";
+    }
+    }
+    // Close Context Menu on Esc key press
+    window.onkeyup = function (e) {
+    if (e.keyCode === 27) {
+        toggleMenuOff();
+    }
+    }
+    positionMenuRef.value = positionMenu;
+
+    function toggleMenuOff() {
+      if (menuState.value !== 0) {
+        menuState.value = 0;
+        if (contextMenu.value !== null){
+            contextMenu.value.classList.remove("d-block");
+        }
+      }
+    }
+    toggleMenuOffRef.value = toggleMenuOff;
+
+    function toggleMenuOn() {
+        if (menuState.value !== 1) {
+            menuState.value = 1;
+            if (contextMenu.value !== null){
+                contextMenu.value.classList.add("d-block");
+            }
+        }
+    }
+    toggleMenuOnRef.value = toggleMenuOn;
+}
 
 function submit(e: any): void {
     if (input.value === "") {
@@ -39,13 +132,14 @@ function submit(e: any): void {
     handleSubmit(e);
 };
 
-function submitSelected(e: any, prompt: string){
+function submitSelected(event: Event, prompt: string){
+    console.log("submitSelected")
     const selected = window.getSelection();
     if (selected.toString() === ""){
         return
     }
     input.value = input.value.concat(prompt + selected);
-    handleSubmit(e);
+    handleSubmit(event);
 }
 
 watch(messages, (_): void => {
@@ -66,68 +160,9 @@ watch(messages, (_): void => {
 function onContextMenu(e : MouseEvent) {
     //prevent the browser's default menu
     e.preventDefault();
-    //show our menu
-    ContextMenu.showContextMenu({
-      x: e.x,
-      y: e.y,
-      items: [
-        {
-          label: "Summarize",
-          onClick: () => {
-            submitSelected(e, "Summarize the following content and make it such that the response can immediately be added to a text editor: ");
-          }
-        },
-        {
-            label: "Check spelling",
-            onClick: () => {
-              submitSelected(e, "Check spelling for the following content and make it such that the response can immediately be added to a text editor: ");
-          }
-        },
-        {
-            label: "Reformulate",
-            onClick: () => {
-              submitSelected(e, "Reformulate the following content and make it such that the response can immediately be added to a text editor: ");
-          }
-        },
-        {
-            label: "Adapt to scientific style",
-            onClick: () => {
-              submitSelected(e, "Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor: ");
-          }
-        },
-        {
-            label: "Concise",
-            onClick: () => {
-              submitSelected(e, "Concise the following content and make it such that the response can immediately be added to a text editor: ");
-          }
-        },
-        {
-            label: "Add structure",
-            onClick: () => {
-              submitSelected(e, "Add structure to the following content and make it such that the response can immediately be added to a text editor: ");
-          }
-        },
-        {
-            label: "Define",
-            onClick: () => {
-              submitSelected(e, "Define the following content and make it such that the response can immediately be added to a text editor: ");
-            }
-        },
-        {
-            label: "Find synonyms",
-            onClick: () => {
-              submitSelected(e, "Find synonyms for the following content and make it such that the response can immediately be added to a text editor: ");
-            }
-        },
-        {
-            label: "Give writing advice",
-            onClick: () => {
-              submitSelected(e, "Give writing advice for the following content and make it such that the response can immediately be added to a text editor: ");
-            }
-        },
-      ]
-    });
-  }
+    toggleMenuOnRef.value();
+    positionMenuRef.value(e);
+}
 </script>
 
 <template>
@@ -184,9 +219,77 @@ function onContextMenu(e : MouseEvent) {
             </v-col>
         </v-row>
     </v-container>
+    <ul ref="contextMenu" aria-label="Context Menu" class="context-menu">
+        <li class="context-menu-list-item">
+            <button @click="submitSelected($event, 'Summarize the following content and make it such that the response can immediately be added to a text editor: ')">Summarize</button>
+        </li>
+        <li class="context-menu-list-item">
+            <button @click="submitSelected($event, 'Check spelling for the following content and make it such that the response can immediately be added to a text editor: ')">Check spelling</button>
+        </li>
+        <li class="context-menu-list-item">
+            <button @click="submitSelected($event, 'Reformulate the following content and make it such that the response can immediately be added to a text editor: ')">Reformulate</button>
+        </li>
+        <li class="context-menu-list-item">
+            <button @click="submitSelected($event, 'Concise the following content and make it such that the response can immediately be added to a text editor: ')">Concise</button>
+        </li>
+        <li class="context-menu-list-item">
+            <button @click="submitSelected($event, 'Add structure to the following content and make it such that the response can immediately be added to a text editor: ')">Add structure</button>
+        </li>
+        <li class="context-menu-list-item">
+            <button @click="submitSelected($event, 'Define the following content and make it such that the response can immediately be added to a text editor: ')">Define</button>
+        </li>
+        <li class="context-menu-list-item">
+            <button @click="submitSelected($event, 'Find synonyms for the following content and make it such that the response can immediately be added to a text editor: ')">Find synonyms</button>
+        </li>
+        <li class="context-menu-list-item">
+            <button @click="submitSelected($event, 'Give writing advice for the following content and make it such that the response can immediately be added to a text editor: ')">Give writing advice</button>
+        </li>
+        <li class="context-menu-list-item">
+            <button @click="submitSelected($event, 'Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor: ')">Adapt to scientific style</button>
+        </li>
+    </ul>
 </template>
 
 <style scoped>
+.context-menu{
+    display: none;
+    position: absolute;
+    z-index: 10;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem; 
+    padding-top: 1rem;
+    padding-bottom: 1rem; 
+    flex-direction: column; 
+    border-radius: 0.5rem; 
+    border-width: 1px; 
+    border-color: #D1D5DB; 
+    font-size: 0.875rem;
+    line-height: 1.25rem; 
+    background-color: #ffffff; 
+    filter: drop-shadow(0 0 0.75rem #D1D5DB);
+}
+.context-menu-list-item{
+    display: flex; 
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem; 
+    padding-left: 1.5rem;
+    padding-right: 1.5rem; 
+    border-radius: 0.25rem;
+    cursor: pointer; 
+}
+.context-menu-list-item:hover {
+        background-color: #f1f1f1; 
+}
+
+context-menu-list-item-icon{
+    width: 1.25rem; 
+    color: #111827; 
+}
+
+.context-menu-list-item-text{
+    margin-left: 1rem;
+    color: #2e2e2e;
+}
 .skip-link {
   white-space: nowrap;
   margin: 1em auto;
@@ -205,7 +308,7 @@ function onContextMenu(e : MouseEvent) {
 .chat{
     width: 100%; 
     max-width: 28rem;
-    background-color: antiquewhite;
+    background-color: #ffffff;
     border: #000000 2px solid;
     display: flex;
     flex-direction: column;
