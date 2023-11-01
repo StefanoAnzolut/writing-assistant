@@ -8,8 +8,8 @@ import { ResultReason } from 'microsoft-cognitiveservices-speech-sdk'
 import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
 
 useHead({
-  title: 'Writing Assistant',
-  meta: [{ name: 'An AI-powered writing assistant' }],
+  title: 'Writing Partner',
+  meta: [{ name: 'An AI-powered writing partner' }],
 })
 
 const { messages, input, handleSubmit } = useChat({
@@ -23,6 +23,12 @@ if (process.client) {
   import('@ckeditor/ckeditor5-build-classic').then(e => (ClassicEditor.value = e.default))
 }
 
+function onTextEditorReady(){
+  var element = document.getElementsByClassName("ck-editor__editable")[0]
+  element.id = "editor"
+  console.log(element)
+}
+
 /** Shared editor content between the user and the writing partner */
 const editorContent = ref('')
 /** Session chat history between the user and the writing partner */
@@ -31,6 +37,8 @@ const chatHistory = reactive([{}])
 const contextMenuRef = ref()
 /** Text-To-Speech Audio Player*/
 const tts_audio = ref({ player: new speechsdk.SpeakerAudioDestination(), muted: false })
+
+// const voiceInteraction = ref(false)
 
 /** Set the references of chat messages in order to focus on specific ones */
 function updateRefs(messageElement: Element, index: number) {
@@ -52,7 +60,11 @@ function submitSelected(event: Event, prompt: string) {
     return
   }
   input.value = input.value.concat(prompt + selected)
-  handleSubmit(event)
+  try {
+    handleSubmit(event)
+  } catch (e) {
+    console.log(e)
+  }
 }
 
 /** Suggestion text box for the writing partner in the text editor
@@ -67,16 +79,25 @@ watch(messages, (_): void => {
           /<p>-----<\/p><p>Suggestion: .*$/g,
           `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
         )
-        chatHistory[chatHistory.length - 1].focus()
+        // if (!voiceInteraction.value) {
+          chatHistory[chatHistory.length - 1].focus()
+        // }
       } else {
         editorContent.value = editorContent.value.concat(
           `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
         )
-        chatHistory[chatHistory.length - 1].focus()
+        // if (!voiceInteraction.value) {
+          chatHistory[chatHistory.length - 1].focus()
+        // }
       }
     }
   })
 })
+
+
+function insertText(text: string){
+  editorContent.value = text
+}
 
 function onContextMenu(e: MouseEvent) {
   //prevent the browser's default menu
@@ -98,13 +119,19 @@ async function sttFromMic() {
   recognizer.recognizeOnceAsync(result => {
     if (result.reason === ResultReason.RecognizedSpeech) {
       console.log(`RECOGNIZED: Text=${result.text}`)
-    } else {
+      input.value = input.value.concat(result.text)
+      const eventTemp = new Event('submit')
+      handleSubmit(eventTemp)
+      } else {
       console.log('ERROR: Speech was cancelled or could not be recognized. Ensure your microphone is working properly.')
+      // if (voiceInteraction.value){
+        synthesizeSpeech("Spracheingabe abgebrochen oder Stimme konnte nicht erkannt werden. Bitte überprüfen Sie Ihr Mikrofon.")
+      // }
     }
   })
 }
 
-async function synthesizeSpeech() {
+async function synthesizeSpeech(textToSpeak: string) {
   const tokenObj = await getTokenOrRefresh()
   const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
   speechConfig.speechSynthesisLanguage = 'de-DE'
@@ -113,8 +140,10 @@ async function synthesizeSpeech() {
   const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(tts_audio.value.player)
   let synthesizer = new speechsdk.SpeechSynthesizer(speechConfig, audioConfig)
 
-  const textToSpeak = 'Dies ist ein Beispiel für die Sprachsynthese eines langen Textabschnitts.'
   console.log(`speaking text: ${textToSpeak}...`)
+
+  // Events are raised as the output audio data becomes available, which is faster than playback to an output device.
+  // We must must appropriately synchronize streaming and real-time.
   synthesizer.speakTextAsync(
     textToSpeak,
     result => {
@@ -149,15 +178,40 @@ async function replayAudio() {
   tts_audio.value.player.pause()
   tts_audio.value.player.resume()
 }
+
+function demoSpeechSynthesis(){
+  insertText("<ol><li>1. Methodik<ol><li>1.1 Qualitatives Arbeiten</li><li>1.2 Datenerhebung<ol><li>1.2.1 Demografie der Teilnehmenden</li></ol></li></ol></li></ol>")
+  synthesizeSpeech(
+          'Das ist eine Beispielantwort. Der Text hat folgende Formattierung: Liste mit einem Eintrag Level 1  1. Methodik Liste mit zwei Einträgen Level 2 1.1 Qualitatives Arbeiten 1.2 Datenerhebung Liste mit einem Eintrag Level 3 1.2.1 Demographie der Teilnehmenden. Überprüfe das Format im Text editor mit dem Screenreader'
+  )
+  document.getElementById("speechSynthesis").disabled = true;
+}
 </script>
 
 <template>
   <SkipLinks />
   <SiteHeader />
   <div class="text-center pt-4">
+    <!-- <v-switch
+      v-model="voiceInteraction"
+      color="success"
+      :label="`Voice interaction: ${voiceInteraction}`"
+      true-value="active"
+      false-value="disabled"
+      role="switch"
+      aria-checked="false"
+    ></v-switch> -->
     <button class="stt" @click="sttFromMic">Activate voice</button>
-    <button class="stt" @click="synthesizeSpeech">Text to speech</button>
-    <button class="stt" @click="handleMute">Pause/Continue</button>
+    <button
+    id="speechSynthesis"
+      class="stt"
+      @click="
+        demoSpeechSynthesis()
+      "
+    >
+      Voice example
+    </button>
+    <button class="stt" @click="handleMute">Pause/Unpause</button>
     <button class="stt" @click="replayAudio">Replay audio</button>
   </div>
   <v-container>
@@ -180,7 +234,7 @@ async function replayAudio() {
                 {{ m.content }}
               </div>
               <form @submit="submit">
-                <input id="chat-input" class="chat-input" v-model="input" placeholder="Send a message" />
+                <input id="chat-input" class="chat-input" v-model="input" placeholder="Send a message" aria-label="writing partner chat interface"/>
               </form>
             </div>
           </div>
@@ -191,7 +245,7 @@ async function replayAudio() {
           <h2 class="card-title">Editor</h2>
           <div class="card-text" @contextmenu="onContextMenu($event)">
             <client-only>
-              <CKEditor v-if="ClassicEditor" v-model="editorContent" :editor="ClassicEditor"></CKEditor>
+              <CKEditor v-if="ClassicEditor" v-model="editorContent" :editor="ClassicEditor" @ready="onTextEditorReady"></CKEditor>
             </client-only>
           </div>
         </div>

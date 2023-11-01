@@ -210,11 +210,24 @@ defineExpose({
           $emit(
             'submit',
             $event,
-            'Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor: '
+            'Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor Selection start marker:'
           )
         "
       >
         Adapt to scientific style
+      </button>
+    </li>
+    <li class="context-menu-list-item">
+      <button
+        @click="
+          $emit(
+            'submit',
+            $event,
+            'Focus only on the formatting of the following content and accurately return the description of the formatting structure only, do not add unseen formatting, do not return your answer as a list. Selection start marker:'
+          )
+        "
+      >
+        Describe formatting
       </button>
     </li>
   </ul>

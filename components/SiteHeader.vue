@@ -1,7 +1,7 @@
 <template>
   <h1 class="text-center">
     <a href="#">
-      <img src="../favicon.svg" alt="Writing Assistant" />
+      <img src="../public/favicon.svg" alt="Black pen" />
     </a>
     Writing Partner
   </h1>

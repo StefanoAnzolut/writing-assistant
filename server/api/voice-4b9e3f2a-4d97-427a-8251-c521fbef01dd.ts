@@ -1,5 +1,7 @@
 import axios from 'axios'
 export default defineEventHandler(async event => {
+  console.log('Headers: ' + getHeaders(event))
+
   // console.log(event.headers.entries())
   // res.setHeader('Content-Type', 'application/json')
   const speechKey = process.env.AZURE_SPEECH_API_KEY
