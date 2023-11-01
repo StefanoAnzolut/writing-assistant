@@ -7,8 +7,6 @@ const toggleMenuOnRef = ref()
 
 if (process.client) {
   contextMenu.value = document.querySelector('.context-menu')
-  console.log(contextMenu)
-  console.log(contextMenu.value)
 
   // Event Listener for Close Context Menu when outside of menu clicked
   document.addEventListener('click', e => {

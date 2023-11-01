@@ -3,6 +3,9 @@ import { useChat } from 'ai/vue'
 import ContextMenu from './components/ContextMenu.vue'
 import SiteHeader from './components/SiteHeader.vue'
 import SkipLinks from './components/SkipLinks.vue'
+import { getTokenOrRefresh } from './utils/token_util'
+import { ResultReason } from 'microsoft-cognitiveservices-speech-sdk'
+import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
 
 useHead({
   title: 'Writing Assistant',
@@ -20,14 +23,21 @@ if (process.client) {
   import('@ckeditor/ckeditor5-build-classic').then(e => (ClassicEditor.value = e.default))
 }
 
+/** Shared editor content between the user and the writing partner */
 const editorContent = ref('')
-const chatHistory = reactive([])
+/** Session chat history between the user and the writing partner */
+const chatHistory = reactive([{}])
+/** The reference of the context menu for the text editor */
 const contextMenuRef = ref()
+/** Text-To-Speech Audio Player*/
+const tts_audio = ref({ player: new speechsdk.SpeakerAudioDestination(), muted: false })
 
-function updateRefs(el, index) {
-  chatHistory[index] = el
+/** Set the references of chat messages in order to focus on specific ones */
+function updateRefs(messageElement: Element, index: number) {
+  chatHistory[index] = messageElement
 }
 
+/** Text completion submission wrapper */
 function submit(e: any): void {
   if (input.value === '') {
     input.value = input.value.concat(editorContent.value)
@@ -45,6 +55,9 @@ function submitSelected(event: Event, prompt: string) {
   handleSubmit(event)
 }
 
+/** Suggestion text box for the writing partner in the text editor
+ * uses the editorContent for the shared state
+ */
 watch(messages, (_): void => {
   messages.value.forEach(function (message, idx, array) {
     if (message.role === 'assistant' && idx === array.length - 1) {
@@ -71,11 +84,82 @@ function onContextMenu(e: MouseEvent) {
   contextMenuRef.value.toggleMenuOnRef()
   contextMenuRef.value.positionMenuRef(e)
 }
+
+async function sttFromMic() {
+  const tokenObj = await getTokenOrRefresh()
+  const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
+  speechConfig.speechRecognitionLanguage = 'de-DE'
+
+  const audioConfig = speechsdk.AudioConfig.fromDefaultMicrophoneInput()
+  const recognizer = new speechsdk.SpeechRecognizer(speechConfig, audioConfig)
+
+  console.log('speak into your microphone...')
+
+  recognizer.recognizeOnceAsync(result => {
+    if (result.reason === ResultReason.RecognizedSpeech) {
+      console.log(`RECOGNIZED: Text=${result.text}`)
+    } else {
+      console.log('ERROR: Speech was cancelled or could not be recognized. Ensure your microphone is working properly.')
+    }
+  })
+}
+
+async function synthesizeSpeech() {
+  const tokenObj = await getTokenOrRefresh()
+  const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
+  speechConfig.speechSynthesisLanguage = 'de-DE'
+  /** Leni & Jan für CH. Alle weiteren findet man hier: https://speech.microsoft.com/portal/voicegallery */
+  speechConfig.speechSynthesisVoiceName = 'de-CH-JanNeural'
+  const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(tts_audio.value.player)
+  let synthesizer = new speechsdk.SpeechSynthesizer(speechConfig, audioConfig)
+
+  const textToSpeak = 'Dies ist ein Beispiel für die Sprachsynthese eines langen Textabschnitts.'
+  console.log(`speaking text: ${textToSpeak}...`)
+  synthesizer.speakTextAsync(
+    textToSpeak,
+    result => {
+      let text
+      if (result.reason === speechsdk.ResultReason.SynthesizingAudioCompleted) {
+        text = `synthesis finished for "${textToSpeak}".\n`
+      } else if (result.reason === speechsdk.ResultReason.Canceled) {
+        text = `synthesis failed. Error detail: ${result.errorDetails}.\n`
+      }
+      synthesizer.close()
+      console.log(text)
+    },
+    function (err) {
+      console.log(`Error: ${err}.\n`)
+
+      synthesizer.close()
+    }
+  )
+}
+
+async function handleMute() {
+  if (!tts_audio.value.muted) {
+    tts_audio.value.player.pause()
+    tts_audio.value.muted = true
+  } else {
+    tts_audio.value.player.resume()
+    tts_audio.value.muted = false
+  }
+}
+
+async function replayAudio() {
+  tts_audio.value.player.pause()
+  tts_audio.value.player.resume()
+}
 </script>
 
 <template>
   <SkipLinks />
   <SiteHeader />
+  <div class="text-center pt-4">
+    <button class="stt" @click="sttFromMic">Activate voice</button>
+    <button class="stt" @click="synthesizeSpeech">Text to speech</button>
+    <button class="stt" @click="handleMute">Pause/Continue</button>
+    <button class="stt" @click="replayAudio">Replay audio</button>
+  </div>
   <v-container>
     <v-row>
       <v-col cols="3">
@@ -92,7 +176,7 @@ function onContextMenu(e: MouseEvent) {
                 :ref="el => updateRefs(el, i)"
                 tabindex="-1"
               >
-                {{ m.role === 'user' ? 'User: ' : 'Writing Assistant: ' }}
+                {{ m.role === 'user' ? 'User: ' : 'Writing Partner: ' }}
                 {{ m.content }}
               </div>
               <form @submit="submit">
@@ -122,7 +206,7 @@ function onContextMenu(e: MouseEvent) {
   width: 100%;
   max-width: 28rem;
   background-color: #ffffff;
-  border: #000000 2px solid;
+  border: #ccced1 1px solid;
   display: flex;
   flex-direction: column;
   max-height: 50vh;
@@ -132,7 +216,7 @@ function onContextMenu(e: MouseEvent) {
   white-space: pre-wrap;
   padding-left: 0.5rem;
   padding-right: 0.5rem;
-  border-bottom: #000000 1px solid;
+  border-bottom: #ccced1 1px solid;
 }
 .chat-input {
   bottom: 0;
@@ -141,11 +225,21 @@ function onContextMenu(e: MouseEvent) {
   border-radius: 0.25rem;
   border-width: 1px;
   border-color: #d1d5db;
-  border-top: #000000 1px solid;
   width: 100%;
   max-width: 28rem;
   box-shadow:
     0 20px 25px -5px rgba(0, 0, 0, 0.1),
     0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+.stt {
+  border: 3px solid;
+  border-color: #000000;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  border-radius: 0.5rem;
+  border-width: 1px;
+  filter: drop-shadow(0 0 0.75rem #d1d5db);
 }
 </style>
