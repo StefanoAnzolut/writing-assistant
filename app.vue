@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useChat } from 'ai/vue'
 import SiteHeader from './components/SiteHeader.vue'
-import SkipLinks from './components/SkipLinks.vue'
 import { getTokenOrRefresh } from './utils/token_util'
 import { ResultReason } from 'microsoft-cognitiveservices-speech-sdk'
 import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
@@ -15,12 +14,6 @@ useHead({
 const { messages, input, handleSubmit } = useChat({
   headers: { 'Content-Type': 'application/json' },
 })
-
-// let ClassicEditor = ref()
-// if (process.client) {
-//   CKEditor = defineAsyncComponent(() => import('@ckeditor/ckeditor5-vue').then(module => module.component))
-//   import('@ckeditor/ckeditor5-build-classic').then(e => (ClassicEditor.value = e.default))
-// }
 
 let ckeditor: AsyncComponentLoader
 let editor: any
@@ -103,12 +96,9 @@ function onNamespaceLoaded() {
 }
 
 function registerActions(editor, actions) {
-  let group = 'group'
-  let counter = 0
   let contextMenuListener = {}
   actions.forEach(function (action) {
-    let groupName = 'group' + counter
-    editor.addMenuGroup(groupName)
+    editor.addMenuGroup('aiSuggestions')
     editor.addCommand(action.name, {
       exec: function (editor) {
         const eventTemp = new Event('submit')
@@ -118,7 +108,7 @@ function registerActions(editor, actions) {
     editor.addMenuItem(action.name, {
       label: action.label,
       command: action.name,
-      group: groupName,
+      group: 'aiSuggestions',
     })
     contextMenuListener[action.name] = CKEDITOR.TRISTATE_OFF
   })
@@ -131,8 +121,6 @@ function registerActions(editor, actions) {
 const editorContent = ref('')
 /** Session chat history between the user and the writing partner */
 const chatHistory = reactive([{}])
-/** The reference of the context menu for the text editor */
-const contextMenuRef = ref()
 /** Text-To-Speech Audio Player*/
 const tts_audio = ref({ player: new speechsdk.SpeakerAudioDestination(), muted: false })
 /** Overlay for the voice interaction */
@@ -214,10 +202,6 @@ watch(messages, (_): void => {
   })
 })
 
-function insertText(text: string) {
-  editorContent.value = text
-}
-
 async function sttFromMic() {
   const tokenObj = await getTokenOrRefresh()
   const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
@@ -236,9 +220,7 @@ async function sttFromMic() {
       handleSubmit(eventTemp)
     } else {
       console.log('ERROR: Speech was cancelled or could not be recognized. Ensure your microphone is working properly.')
-      // if (voiceInteraction.value){
       synthesizeSpeech('Speech was cancelled or could not be recognized. Ensure your microphone is working properly.')
-      // }
     }
   })
 }
@@ -278,49 +260,27 @@ async function synthesizeSpeech(textToSpeak: string) {
 
 async function pause() {
   if (!tts_audio.value.muted) {
-    // overlay.value = false
     tts_audio.value.player.pause()
     tts_audio.value.muted = true
   } else {
-    // overlay.value = false;
     tts_audio.value.player.resume()
     tts_audio.value.muted = false
   }
 }
-
-// async function replayAudio() {
-//   overlay.value = true
-//   tts_audio.value.player.pause()
-//   tts_audio.value.player.resume()
-// }
-
-// function demoSpeechSynthesis(){
-//   insertText("<ol><li>1. Methods<ol><li>1.1 Qualitative work</li><li>1.2 Data collection<ol><li>1.2.1 Demographics of participants</li></ol></li></ol></li></ol>")
-//   synthesizeSpeech(
-//           'This is a sample response. The text has the following formatting: Level 1 1. Methods list with one entry Level 2 1.1 Qualitative work 1.2 Data collection list with two entries Level 3 1.2.1 Demographics of participants list with one entry. Check the format in the text editor with the screen reader.'
-//   )
-//   document.getElementById("speechSynthesis").disabled = true;
-// }
 </script>
 
 <template>
-  <SkipLinks />
   <SiteHeader />
-  <!-- <div class="text-center pt-4">
-    <button
-    id="speechSynthesis"
-      class="stt"
-      @click="
-        demoSpeechSynthesis()
-      "
-    >
-      Voice example
-    </button>
-  </div> -->
   <v-container>
     <v-row>
+      <v-overlay v-model="overlay" contained class="align-center justify-center">
+        <v-btn id="playPauseButton" color="success" @click="pause()">
+          {{ tts_audio.muted ? texts.audioPlayer.play : texts.audioPlayer.pause }}
+        </v-btn>
+      </v-overlay>
       <v-col cols="3">
         <div class="card">
+          <v-btn color="success" class="my-4" @click="sttFromMic"> Start talking </v-btn>
           <p class="card-title">Chat</p>
           <div class="card-text">
             <div class="chat">
@@ -353,19 +313,6 @@ async function pause() {
             </div>
           </div>
         </div>
-        <v-btn color="success" class="mt-4" @click="sttFromMic"> Start talking </v-btn>
-        <!-- <v-btn
-          color="success"
-          class="mt-12"
-          @click="replayAudio"
-        >
-          Replay last message
-        </v-btn> -->
-        <v-overlay v-model="overlay" contained class="align-center justify-center">
-          <v-btn id="playPauseButton" color="success" @click="pause()">
-            {{ tts_audio.muted ? texts.audioPlayer.play : texts.audioPlayer.pause }}
-          </v-btn>
-        </v-overlay>
       </v-col>
       <v-col cols="8">
         <div class="card">
