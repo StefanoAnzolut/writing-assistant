@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { useChat } from 'ai/vue'
-import ContextMenu from './components/ContextMenu.vue'
 import SiteHeader from './components/SiteHeader.vue'
 import SkipLinks from './components/SkipLinks.vue'
 import { getTokenOrRefresh } from './utils/token_util'
 import { ResultReason } from 'microsoft-cognitiveservices-speech-sdk'
 import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
+import type { AsyncComponentLoader } from 'vue'
 
 useHead({
   title: 'Writing Partner',
@@ -16,17 +16,115 @@ const { messages, input, handleSubmit } = useChat({
   headers: { 'Content-Type': 'application/json' },
 })
 
-let CKEditor: any
-let ClassicEditor = ref()
+// let ClassicEditor = ref()
+// if (process.client) {
+//   CKEditor = defineAsyncComponent(() => import('@ckeditor/ckeditor5-vue').then(module => module.component))
+//   import('@ckeditor/ckeditor5-build-classic').then(e => (ClassicEditor.value = e.default))
+// }
+
+let ckeditor: AsyncComponentLoader
+let editor: any
 if (process.client) {
-  CKEditor = defineAsyncComponent(() => import('@ckeditor/ckeditor5-vue').then(module => module.component))
-  import('@ckeditor/ckeditor5-build-classic').then(e => (ClassicEditor.value = e.default))
+  ckeditor = defineAsyncComponent(() => import('@mayasabha/ckeditor4-vue3').then(module => module.component))
+}
+const editorUrl = 'https://a11y-editor-proxy.fly.dev/ckeditor.js'
+
+function onNamespaceLoaded() {
+  CKEDITOR.on('instanceReady', function (ck) {
+    ck.editor.removeMenuItem('cut')
+    ck.editor.removeMenuItem('copy')
+    ck.editor.removeMenuItem('paste')
+    editor = ck.editor
+    let actions = [
+      {
+        name: 'summarize',
+        label: 'Summarize',
+        prompt:
+          'Summarize the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'checkSpelling',
+        label: 'Check spelling',
+        prompt:
+          'Check spelling for the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'reformulate',
+        label: 'Reformulate',
+        prompt:
+          'Reformulate the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'concise',
+        label: 'Concise',
+        prompt:
+          'Concise the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'addStructure',
+        label: 'Add structure',
+        prompt:
+          'Add structure to the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'define',
+        label: 'Define',
+        prompt:
+          'Define the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'findSynonyms',
+        label: 'Find synonyms',
+        prompt:
+          'Find synonyms for the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'giveWritingAdvice',
+        label: 'Give writing advice',
+        prompt:
+          'Give writing advice for the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'adaptToScientificStyle',
+        label: 'Adapt to scientific style',
+        prompt:
+          'Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor Selection start marker:',
+      },
+      {
+        name: 'describeFormatting',
+        label: 'Describe formatting',
+        prompt:
+          'Focus only on the formatting of the following content and accurately return the description of the formatting structure only, do not add unseen formatting, do not return your answer as a list. Selection start marker:',
+      },
+    ]
+
+    registerActions(editor, actions)
+  })
 }
 
-function onTextEditorReady(){
-  var element = document.getElementsByClassName("ck-editor__editable")[0]
-  element.id = "editor"
-  console.log(element)
+function registerActions(editor, actions) {
+  let group = 'group'
+  let counter = 0
+  let contextMenuListener = {}
+  actions.forEach(function (action) {
+    let groupName = 'group' + counter
+    editor.addMenuGroup(groupName)
+    editor.addCommand(action.name, {
+      exec: function (editor) {
+        const eventTemp = new Event('submit')
+        submitSelected(eventTemp, action.prompt)
+      },
+    })
+    editor.addMenuItem(action.name, {
+      label: action.label,
+      command: action.name,
+      group: groupName,
+    })
+    contextMenuListener[action.name] = CKEDITOR.TRISTATE_OFF
+  })
+  editor.contextMenu.addListener(function (element) {
+    return contextMenuListener
+  })
 }
 
 /** Shared editor content between the user and the writing partner */
@@ -37,6 +135,26 @@ const chatHistory = reactive([{}])
 const contextMenuRef = ref()
 /** Text-To-Speech Audio Player*/
 const tts_audio = ref({ player: new speechsdk.SpeakerAudioDestination(), muted: false })
+/** Overlay for the voice interaction */
+const overlay = ref(false)
+
+const texts = reactive({
+  audioPlayer: {
+    pause: 'Pause',
+    play: 'Play',
+  },
+})
+
+tts_audio.value.player.onAudioEnd = () => {
+  overlay.value = false
+}
+
+tts_audio.value.player.onAudioStart = () => {
+  overlay.value = true
+  tts_audio.value.muted = false
+  let playPauseButton = document.getElementById('playPauseButton')
+  playPauseButton.focus()
+}
 
 // const voiceInteraction = ref(false)
 
@@ -54,12 +172,14 @@ function submit(e: any): void {
 }
 
 function submitSelected(event: Event, prompt: string) {
-  console.log('submitSelected')
-  const selected = window.getSelection()
-  if (selected.toString() === '') {
+  const range = editor.getSelection().getRanges()[0]
+  const selected_fragment = range.cloneContents()
+  const selected_text = selected_fragment.$['textContent']
+  // const selected = window.getSelection()
+  if (selected_text === '') {
     return
   }
-  input.value = input.value.concat(prompt + selected)
+  input.value = input.value.concat(prompt + selected_text)
   try {
     handleSubmit(event)
   } catch (e) {
@@ -80,37 +200,29 @@ watch(messages, (_): void => {
           `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
         )
         // if (!voiceInteraction.value) {
-          chatHistory[chatHistory.length - 1].focus()
+        chatHistory[chatHistory.length - 1].focus()
         // }
       } else {
         editorContent.value = editorContent.value.concat(
           `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
         )
         // if (!voiceInteraction.value) {
-          chatHistory[chatHistory.length - 1].focus()
+        chatHistory[chatHistory.length - 1].focus()
         // }
       }
     }
   })
 })
 
-
-function insertText(text: string){
+function insertText(text: string) {
   editorContent.value = text
-}
-
-function onContextMenu(e: MouseEvent) {
-  //prevent the browser's default menu
-  e.preventDefault()
-  contextMenuRef.value.toggleMenuOnRef()
-  contextMenuRef.value.positionMenuRef(e)
 }
 
 async function sttFromMic() {
   const tokenObj = await getTokenOrRefresh()
   const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
-  speechConfig.speechRecognitionLanguage = 'de-DE'
-
+  speechConfig.speechRecognitionLanguage = 'en-US'
+  // Todo: Check additional effort to inlcude auto-detection of language
   const audioConfig = speechsdk.AudioConfig.fromDefaultMicrophoneInput()
   const recognizer = new speechsdk.SpeechRecognizer(speechConfig, audioConfig)
 
@@ -122,10 +234,10 @@ async function sttFromMic() {
       input.value = input.value.concat(result.text)
       const eventTemp = new Event('submit')
       handleSubmit(eventTemp)
-      } else {
+    } else {
       console.log('ERROR: Speech was cancelled or could not be recognized. Ensure your microphone is working properly.')
       // if (voiceInteraction.value){
-        synthesizeSpeech("Spracheingabe abgebrochen oder Stimme konnte nicht erkannt werden. Bitte überprüfen Sie Ihr Mikrofon.")
+      synthesizeSpeech('Speech was cancelled or could not be recognized. Ensure your microphone is working properly.')
       // }
     }
   })
@@ -134,9 +246,9 @@ async function sttFromMic() {
 async function synthesizeSpeech(textToSpeak: string) {
   const tokenObj = await getTokenOrRefresh()
   const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
-  speechConfig.speechSynthesisLanguage = 'de-DE'
+  speechConfig.speechSynthesisLanguage = 'en-US'
   /** Leni & Jan für CH. Alle weiteren findet man hier: https://speech.microsoft.com/portal/voicegallery */
-  speechConfig.speechSynthesisVoiceName = 'de-CH-JanNeural'
+  speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural'
   const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(tts_audio.value.player)
   let synthesizer = new speechsdk.SpeechSynthesizer(speechConfig, audioConfig)
 
@@ -164,44 +276,37 @@ async function synthesizeSpeech(textToSpeak: string) {
   )
 }
 
-async function handleMute() {
+async function pause() {
   if (!tts_audio.value.muted) {
+    // overlay.value = false
     tts_audio.value.player.pause()
     tts_audio.value.muted = true
   } else {
+    // overlay.value = false;
     tts_audio.value.player.resume()
     tts_audio.value.muted = false
   }
 }
 
-async function replayAudio() {
-  tts_audio.value.player.pause()
-  tts_audio.value.player.resume()
-}
+// async function replayAudio() {
+//   overlay.value = true
+//   tts_audio.value.player.pause()
+//   tts_audio.value.player.resume()
+// }
 
-function demoSpeechSynthesis(){
-  insertText("<ol><li>1. Methodik<ol><li>1.1 Qualitatives Arbeiten</li><li>1.2 Datenerhebung<ol><li>1.2.1 Demografie der Teilnehmenden</li></ol></li></ol></li></ol>")
-  synthesizeSpeech(
-          'Das ist eine Beispielantwort. Der Text hat folgende Formattierung: Liste mit einem Eintrag Level 1  1. Methodik Liste mit zwei Einträgen Level 2 1.1 Qualitatives Arbeiten 1.2 Datenerhebung Liste mit einem Eintrag Level 3 1.2.1 Demographie der Teilnehmenden. Überprüfe das Format im Text editor mit dem Screenreader'
-  )
-  document.getElementById("speechSynthesis").disabled = true;
-}
+// function demoSpeechSynthesis(){
+//   insertText("<ol><li>1. Methods<ol><li>1.1 Qualitative work</li><li>1.2 Data collection<ol><li>1.2.1 Demographics of participants</li></ol></li></ol></li></ol>")
+//   synthesizeSpeech(
+//           'This is a sample response. The text has the following formatting: Level 1 1. Methods list with one entry Level 2 1.1 Qualitative work 1.2 Data collection list with two entries Level 3 1.2.1 Demographics of participants list with one entry. Check the format in the text editor with the screen reader.'
+//   )
+//   document.getElementById("speechSynthesis").disabled = true;
+// }
 </script>
 
 <template>
   <SkipLinks />
   <SiteHeader />
-  <div class="text-center pt-4">
-    <!-- <v-switch
-      v-model="voiceInteraction"
-      color="success"
-      :label="`Voice interaction: ${voiceInteraction}`"
-      true-value="active"
-      false-value="disabled"
-      role="switch"
-      aria-checked="false"
-    ></v-switch> -->
-    <button class="stt" @click="sttFromMic">Activate voice</button>
+  <!-- <div class="text-center pt-4">
     <button
     id="speechSynthesis"
       class="stt"
@@ -211,14 +316,12 @@ function demoSpeechSynthesis(){
     >
       Voice example
     </button>
-    <button class="stt" @click="handleMute">Pause/Unpause</button>
-    <button class="stt" @click="replayAudio">Replay audio</button>
-  </div>
+  </div> -->
   <v-container>
     <v-row>
       <v-col cols="3">
         <div class="card">
-          <h2 class="card-title">Chat</h2>
+          <p class="card-title">Chat</p>
           <div class="card-text">
             <div class="chat">
               <!-- Maybe, pin the last question from the user here -->
@@ -230,32 +333,72 @@ function demoSpeechSynthesis(){
                 :ref="el => updateRefs(el, i)"
                 tabindex="-1"
               >
-                {{ m.role === 'user' ? 'User: ' : 'Writing Partner: ' }}
-                {{ m.content }}
+                <h3>
+                  {{ m.role === 'user' ? 'User: ' : 'Writing Partner: ' }}
+                  {{ m.content }}
+                </h3>
               </div>
               <form @submit="submit">
-                <input id="chat-input" class="chat-input" v-model="input" placeholder="Send a message" aria-label="writing partner chat interface"/>
+                <h2>
+                  <input
+                    id="chat-input"
+                    class="chat-input"
+                    autocomplete="off"
+                    v-model="input"
+                    placeholder="Send a message"
+                    aria-label="chat input"
+                  />
+                </h2>
               </form>
             </div>
           </div>
         </div>
+        <v-btn color="success" class="mt-4" @click="sttFromMic"> Start talking </v-btn>
+        <!-- <v-btn
+          color="success"
+          class="mt-12"
+          @click="replayAudio"
+        >
+          Replay last message
+        </v-btn> -->
+        <v-overlay v-model="overlay" contained class="align-center justify-center">
+          <v-btn id="playPauseButton" color="success" @click="pause()">
+            {{ tts_audio.muted ? texts.audioPlayer.play : texts.audioPlayer.pause }}
+          </v-btn>
+        </v-overlay>
       </v-col>
       <v-col cols="8">
         <div class="card">
-          <h2 class="card-title">Editor</h2>
-          <div class="card-text" @contextmenu="onContextMenu($event)">
+          <p class="card-title">Editor</p>
+          <div class="card-text">
             <client-only>
-              <CKEditor v-if="ClassicEditor" v-model="editorContent" :editor="ClassicEditor" @ready="onTextEditorReady"></CKEditor>
+              <h2>
+                <ckeditor
+                  id="text-editor"
+                  :editor-url="editorUrl"
+                  v-model="editorContent"
+                  @namespaceloaded="onNamespaceLoaded"
+                ></ckeditor>
+              </h2>
             </client-only>
           </div>
         </div>
       </v-col>
     </v-row>
   </v-container>
-  <ContextMenu ref="contextMenuRef" @submit="submitSelected" />
 </template>
 
 <style scoped>
+.card-title {
+  display: block;
+  font-size: 1.5em;
+  margin-block-start: 0.83em;
+  margin-block-end: 0.83em;
+  margin-inline-start: 0px;
+  margin-inline-end: 0px;
+  font-weight: bold;
+}
+
 .chat {
   width: 100%;
   max-width: 28rem;
@@ -271,6 +414,11 @@ function demoSpeechSynthesis(){
   padding-left: 0.5rem;
   padding-right: 0.5rem;
   border-bottom: #ccced1 1px solid;
+  display: block;
+  margin-block-start: 1em;
+  margin-block-end: 1em;
+  margin-inline-start: 0px;
+  margin-inline-end: 0px;
 }
 .chat-input {
   bottom: 0;

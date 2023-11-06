@@ -16,8 +16,7 @@
     "vue-router": "^4.2.5"
   },
   "dependencies": {
-    "@ckeditor/ckeditor5-build-classic": "^40.0.0",
-    "@ckeditor/ckeditor5-vue": "^5.1.0",
+    "@mayasabha/ckeditor4-vue3": "^1.0.3",
     "@mdi/font": "^7.3.67",
     "ai": "^2.2.17",
     "axios": "^1.6.0",

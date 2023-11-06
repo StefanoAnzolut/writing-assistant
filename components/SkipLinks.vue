@@ -7,7 +7,7 @@ const skipLink = ref()
     <ul class="skip-to-content">
       <li>
         <a href="#chat-input" ref="skipLink" class="skip-to-content-link">Skip to chat</a>
-        <a href="#editor" ref="skipLink" class="skip-to-content-link">Skip to text editor</a>
+        <a href="#cke_959_contents" ref="skipLink" class="skip-to-content-link">Skip to text editor</a>
       </li>
     </ul>
   </div>
