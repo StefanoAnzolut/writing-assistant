@@ -2,7 +2,6 @@
 import { useChat } from 'ai/vue'
 import SiteHeader from './components/SiteHeader.vue'
 import { getTokenOrRefresh } from './utils/token_util'
-import { ResultReason } from 'microsoft-cognitiveservices-speech-sdk'
 import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
 import type { AsyncComponentLoader } from 'vue'
 
@@ -14,6 +13,180 @@ useHead({
 const { messages, input, handleSubmit } = useChat({
   headers: { 'Content-Type': 'application/json' },
 })
+
+/** Shared editor content between the user and the writing partner */
+const editorContent = ref('')
+/** Session chat history between the user and the writing partner */
+const chatHistory = reactive([{}])
+/** Text-To-Speech Audio Player*/
+const ttsAudio = ref({ player: {}, muted: false })
+/** Speech-To-Text Recognizer */
+const speechRecognizer = ref({})
+/** Overlay for the voice interaction */
+const overlay = ref(false)
+
+/** Ref to check if voice is activated */
+const voiceActive = ref(false)
+
+const texts = reactive({
+  audioPlayer: {
+    pause: 'Pause',
+    play: 'Play',
+  },
+})
+
+// const voiceInteraction = ref(false)
+
+/** Set the references of chat messages in order to focus on specific ones */
+function updateRefs(messageElement: Element, index: number) {
+  chatHistory[index] = messageElement
+}
+
+/** Text completion submission wrapper */
+function submit(e: any): void {
+  if (input.value === '') {
+    input.value = input.value.concat(editorContent.value)
+  }
+  handleSubmit(e)
+  if (voiceActive.value) {
+    waitForAssistant().then(assistantResponse => {
+      synthesizeSpeech(assistantResponse)
+    })
+  }
+}
+
+function submitSelected(event: Event, prompt: string) {
+  const range = editor.getSelection().getRanges()[0]
+  const selected_fragment = range.cloneContents()
+  const selected_text = selected_fragment.$['textContent']
+  // const selected = window.getSelection()
+  if (selected_text === '') {
+    return
+  }
+  input.value = input.value.concat(prompt + selected_text)
+  try {
+    handleSubmit(event)
+    if (voiceActive.value) {
+      waitForAssistant().then(assistantResponse => {
+        synthesizeSpeech(assistantResponse)
+      })
+    }
+  } catch (e) {
+    console.log(e)
+  }
+}
+
+async function sttFromMic() {
+  voiceActive.value = true
+  const tokenObj = await getTokenOrRefresh()
+  const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
+  speechConfig.speechRecognitionLanguage = 'en-US'
+  // Todo: Check additional effort to inlcude auto-detection of language
+  const audioConfig = speechsdk.AudioConfig.fromDefaultMicrophoneInput()
+  speechRecognizer.value = new speechsdk.SpeechRecognizer(speechConfig, audioConfig)
+  await synthesizeSpeech('Speak into your microphone.')
+
+  speechRecognizer.value.startContinuousRecognitionAsync()
+
+  speechRecognizer.value.recognizing = (_, e) => {
+    console.log(`RECOGNIZING: Text=${e.result.text}`)
+  }
+
+  speechRecognizer.value.recognized = (_, e) => {
+    if (e.result.reason == speechsdk.ResultReason.RecognizedSpeech) {
+      console.log(`RECOGNIZED: Text=${e.result.text}`)
+      input.value = input.value.concat(e.result.text)
+      const eventTemp = new Event('submit')
+      handleSubmit(eventTemp)
+      waitForAssistant().then(assistantResponse => {
+        synthesizeSpeech(assistantResponse)
+      })
+      speechRecognizer.value.stopContinuousRecognitionAsync()
+    } else if (e.result.reason == speechsdk.ResultReason.NoMatch) {
+      console.log('NOMATCH: Speech could not be recognized.')
+    }
+  }
+
+  speechRecognizer.value.canceled = (_, e) => {
+    console.log(`CANCELED: Reason=${e.reason}`)
+    if (e.reason == speechsdk.CancellationReason.Error) {
+      console.log(`"CANCELED: ErrorCode=${e.errorCode}`)
+      console.log(`"CANCELED: ErrorDetails=${e.errorDetails}`)
+      console.log('CANCELED: Did you set the speech resource key and region values?')
+    }
+    speechRecognizer.value.stopContinuousRecognitionAsync()
+  }
+
+  speechRecognizer.value.sessionStopped = (s, e) => {
+    console.log('\n    Session stopped event.')
+    speechRecognizer.value.stopContinuousRecognitionAsync()
+  }
+}
+
+async function waitForAssistant() {
+  // TODO: This can be improved if we change the server endpoint such that it sends the stream end event
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      resolve(
+        messages.value[messages.value.length - 1].role === 'assistant'
+          ? messages.value[messages.value.length - 1].content
+          : 'No response from the assistant yet.'
+      )
+    }, 2500)
+  })
+}
+
+async function synthesizeSpeech(textToSpeak: string) {
+  const tokenObj = await getTokenOrRefresh()
+  const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
+  speechConfig.speechSynthesisLanguage = 'en-US'
+  /** Leni & Jan für CH. Alle weiteren findet man hier: https://speech.microsoft.com/portal/voicegallery */
+  speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural'
+  ttsAudio.value.player = new speechsdk.SpeakerAudioDestination()
+  const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(ttsAudio.value.player)
+  let synthesizer = new speechsdk.SpeechSynthesizer(speechConfig, audioConfig)
+  // Events are raised as the output audio data becomes available, which is faster than playback to an output device.
+  // We must must appropriately synchronize streaming and real-time.
+  synthesizer.speakTextAsync(
+    textToSpeak,
+    result => {
+      let text
+      if (result.reason === speechsdk.ResultReason.SynthesizingAudioCompleted) {
+        text = `synthesis finished for "${textToSpeak}".\n`
+      } else if (result.reason === speechsdk.ResultReason.Canceled) {
+        text = `synthesis failed. Error detail: ${result.errorDetails}.\n`
+      }
+      synthesizer.close()
+      console.log(text)
+    },
+    function (err) {
+      console.log(`Error: ${err}.\n`)
+
+      synthesizer.close()
+    }
+  )
+
+  ttsAudio.value.player.onAudioEnd = () => {
+    overlay.value = false
+  }
+
+  ttsAudio.value.player.onAudioStart = () => {
+    overlay.value = true
+    // TODO: Focus function breaks tts
+    // let playPauseButton = document.getElementById('playPauseButton')
+    // playPauseButton.focus()
+  }
+}
+
+async function pause() {
+  if (!ttsAudio.value.muted) {
+    ttsAudio.value.player.pause()
+    ttsAudio.value.muted = true
+  } else {
+    ttsAudio.value.player.resume()
+    ttsAudio.value.muted = false
+  }
+}
 
 let ckeditor: AsyncComponentLoader
 let editor: any
@@ -116,157 +289,6 @@ function registerActions(editor, actions) {
     return contextMenuListener
   })
 }
-
-/** Shared editor content between the user and the writing partner */
-const editorContent = ref('')
-/** Session chat history between the user and the writing partner */
-const chatHistory = reactive([{}])
-/** Text-To-Speech Audio Player*/
-const tts_audio = ref({ player: new speechsdk.SpeakerAudioDestination(), muted: false })
-/** Overlay for the voice interaction */
-const overlay = ref(false)
-
-const texts = reactive({
-  audioPlayer: {
-    pause: 'Pause',
-    play: 'Play',
-  },
-})
-
-tts_audio.value.player.onAudioEnd = () => {
-  overlay.value = false
-}
-
-tts_audio.value.player.onAudioStart = () => {
-  overlay.value = true
-  tts_audio.value.muted = false
-  let playPauseButton = document.getElementById('playPauseButton')
-  playPauseButton.focus()
-}
-
-// const voiceInteraction = ref(false)
-
-/** Set the references of chat messages in order to focus on specific ones */
-function updateRefs(messageElement: Element, index: number) {
-  chatHistory[index] = messageElement
-}
-
-/** Text completion submission wrapper */
-function submit(e: any): void {
-  if (input.value === '') {
-    input.value = input.value.concat(editorContent.value)
-  }
-  handleSubmit(e)
-}
-
-function submitSelected(event: Event, prompt: string) {
-  const range = editor.getSelection().getRanges()[0]
-  const selected_fragment = range.cloneContents()
-  const selected_text = selected_fragment.$['textContent']
-  // const selected = window.getSelection()
-  if (selected_text === '') {
-    return
-  }
-  input.value = input.value.concat(prompt + selected_text)
-  try {
-    handleSubmit(event)
-  } catch (e) {
-    console.log(e)
-  }
-}
-
-/** Suggestion text box for the writing partner in the text editor
- * uses the editorContent for the shared state
- */
-watch(messages, (_): void => {
-  messages.value.forEach(function (message, idx, array) {
-    if (message.role === 'assistant' && idx === array.length - 1) {
-      console.log(editorContent.value)
-      if (editorContent.value.includes('<p>-----</p><p>Suggestion: ')) {
-        editorContent.value = editorContent.value.replace(
-          /<p>-----<\/p><p>Suggestion: .*$/g,
-          `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
-        )
-        // if (!voiceInteraction.value) {
-        chatHistory[chatHistory.length - 1].focus()
-        // }
-      } else {
-        editorContent.value = editorContent.value.concat(
-          `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
-        )
-        // if (!voiceInteraction.value) {
-        chatHistory[chatHistory.length - 1].focus()
-        // }
-      }
-    }
-  })
-})
-
-async function sttFromMic() {
-  const tokenObj = await getTokenOrRefresh()
-  const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
-  speechConfig.speechRecognitionLanguage = 'en-US'
-  // Todo: Check additional effort to inlcude auto-detection of language
-  const audioConfig = speechsdk.AudioConfig.fromDefaultMicrophoneInput()
-  const recognizer = new speechsdk.SpeechRecognizer(speechConfig, audioConfig)
-
-  console.log('speak into your microphone...')
-
-  recognizer.recognizeOnceAsync(result => {
-    if (result.reason === ResultReason.RecognizedSpeech) {
-      console.log(`RECOGNIZED: Text=${result.text}`)
-      input.value = input.value.concat(result.text)
-      const eventTemp = new Event('submit')
-      handleSubmit(eventTemp)
-    } else {
-      console.log('ERROR: Speech was cancelled or could not be recognized. Ensure your microphone is working properly.')
-      synthesizeSpeech('Speech was cancelled or could not be recognized. Ensure your microphone is working properly.')
-    }
-  })
-}
-
-async function synthesizeSpeech(textToSpeak: string) {
-  const tokenObj = await getTokenOrRefresh()
-  const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
-  speechConfig.speechSynthesisLanguage = 'en-US'
-  /** Leni & Jan für CH. Alle weiteren findet man hier: https://speech.microsoft.com/portal/voicegallery */
-  speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural'
-  const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(tts_audio.value.player)
-  let synthesizer = new speechsdk.SpeechSynthesizer(speechConfig, audioConfig)
-
-  console.log(`speaking text: ${textToSpeak}...`)
-
-  // Events are raised as the output audio data becomes available, which is faster than playback to an output device.
-  // We must must appropriately synchronize streaming and real-time.
-  synthesizer.speakTextAsync(
-    textToSpeak,
-    result => {
-      let text
-      if (result.reason === speechsdk.ResultReason.SynthesizingAudioCompleted) {
-        text = `synthesis finished for "${textToSpeak}".\n`
-      } else if (result.reason === speechsdk.ResultReason.Canceled) {
-        text = `synthesis failed. Error detail: ${result.errorDetails}.\n`
-      }
-      synthesizer.close()
-      console.log(text)
-    },
-    function (err) {
-      console.log(`Error: ${err}.\n`)
-
-      synthesizer.close()
-    }
-  )
-}
-
-async function pause() {
-  if (!tts_audio.value.muted) {
-    tts_audio.value.player.pause()
-    tts_audio.value.muted = true
-  } else {
-    tts_audio.value.player.resume()
-    tts_audio.value.muted = false
-  }
-}
 </script>
 
 <template>
@@ -275,7 +297,7 @@ async function pause() {
     <v-row>
       <v-overlay v-model="overlay" contained class="align-center justify-center">
         <v-btn id="playPauseButton" color="success" @click="pause()">
-          {{ tts_audio.muted ? texts.audioPlayer.play : texts.audioPlayer.pause }}
+          {{ ttsAudio.muted ? texts.audioPlayer.play : texts.audioPlayer.pause }}
         </v-btn>
       </v-overlay>
       <v-col cols="3">
@@ -284,7 +306,6 @@ async function pause() {
           <p class="card-title">Chat</p>
           <div class="card-text">
             <div class="chat">
-              <!-- Maybe, pin the last question from the user here -->
               <div
                 v-for="(m, i) in messages"
                 :index="i"
@@ -294,7 +315,7 @@ async function pause() {
                 tabindex="-1"
               >
                 <h3>
-                  {{ m.role === 'user' ? 'User: ' : 'Writing Partner: ' }}
+                  {{ m.role === 'user' ? 'User: ' : 'Assistant: ' }}
                   {{ m.content }}
                 </h3>
               </div>
@@ -366,6 +387,7 @@ async function pause() {
   margin-block-end: 1em;
   margin-inline-start: 0px;
   margin-inline-end: 0px;
+  font-size: smaller;
 }
 .chat-input {
   bottom: 0;
@@ -379,6 +401,7 @@ async function pause() {
   box-shadow:
     0 20px 25px -5px rgba(0, 0, 0, 0.1),
     0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  font-size: smaller;
 }
 .stt {
   border: 3px solid;
