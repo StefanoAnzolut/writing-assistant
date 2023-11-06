@@ -65,15 +65,40 @@ function submitSelected(event: Event, prompt: string) {
   input.value = input.value.concat(prompt + selected_text)
   try {
     handleSubmit(event)
-    if (voiceActive.value) {
-      waitForAssistant().then(assistantResponse => {
-        synthesizeSpeech(assistantResponse)
-      })
-    }
   } catch (e) {
     console.log(e)
   }
+  if (voiceActive.value) {
+    waitForAssistant().then(assistantResponse => {
+      synthesizeSpeech(assistantResponse)
+    })
+  }
 }
+
+// TODO: Why do I need this when asking a question from the text editor to the assistant
+// As the messages are not appendend to the chat history
+watch(messages, (_): void => {
+  messages.value.forEach(function (message, idx, array) {
+    if (message.role === 'assistant' && idx === array.length - 1) {
+      if (editorContent.value.includes('<p>-----</p><p>Suggestion: ')) {
+        // editorContent.value = editorContent.value.replace(
+        //   /<p>-----<\/p><p>Suggestion: .*$/g,
+        //   `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
+        // )
+        // if (!voiceInteraction.value) {
+        chatHistory[chatHistory.length - 1].focus()
+        // }
+      } else {
+        // editorContent.value = editorContent.value.concat(
+        //   `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
+        // )
+        // if (!voiceInteraction.value) {
+        chatHistory[chatHistory.length - 1].focus()
+        // }
+      }
+    }
+  })
+})
 
 async function sttFromMic() {
   voiceActive.value = true
