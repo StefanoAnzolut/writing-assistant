@@ -24,7 +24,6 @@ const ttsAudio = ref({ player: {}, muted: false })
 const speechRecognizer = ref({})
 /** Overlay for the voice interaction */
 const overlay = ref(false)
-
 /** Ref to check if voice is activated */
 const voiceActive = ref(false)
 
@@ -104,6 +103,9 @@ async function sttFromMic() {
       speechRecognizer.value.stopContinuousRecognitionAsync()
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch) {
       console.log('NOMATCH: Speech could not be recognized.')
+      // Todo: Why is this called twice?
+      synthesizeSpeech('I did not understand or hear you. Stopping recording of your microphone.')
+      speechRecognizer.value.stopContinuousRecognitionAsync()
     }
   }
 
