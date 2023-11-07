@@ -169,7 +169,7 @@ async function waitForAssistant(): Promise<string> {
           ? messages.value[messages.value.length - 1].content
           : 'No response from the assistant yet.'
       )
-    }, 2500)
+    }, 4000)
   })
 }
 
@@ -352,6 +352,12 @@ function removeButtonRole() {
 function observe_cke_path() {
   // Select the node that will be observed for mutations
   const targetNode = document.getElementById('cke_1_path')
+  if (!targetNode) {
+    //The node we need does not exist yet.
+    //Wait 500ms and try again
+    window.setTimeout(observe_cke_path, 500)
+    return
+  }
 
   // Options for the observer (which mutations to observe)
   const config = { attributes: true, childList: true, subtree: true }
@@ -428,7 +434,7 @@ function playEnvelopeSignal() {
   })
     .connect(env)
     .start()
-  env.triggerAttackRelease(0.2)
+  env.triggerAttackRelease(0.3)
 }
 </script>
 
@@ -438,8 +444,12 @@ function playEnvelopeSignal() {
     <v-row>
       <v-col cols="3">
         <div class="card">
-          <v-btn color="success" class="my-4" @click="sttFromMic" v-if="!overlay"> Start talking to ChatGPT</v-btn>
-          <v-btn color="primary" class="my-4" @click="getResponse" v-if="!overlay"> Play ChatGPT response</v-btn>
+          <v-btn color="success" class="ma-4 no-uppercase" @click="sttFromMic" v-if="!overlay">
+            Start talking to ChatGPT</v-btn
+          >
+          <v-btn color="primary" class="ma-4 no-uppercase" @click="getResponse" v-if="!overlay">
+            Play ChatGPT response</v-btn
+          >
           <v-overlay id="overlay" v-model="overlay" contained class="align-center justify-center" :persistent="true">
             <v-btn
               id="playPauseButton"
@@ -561,5 +571,8 @@ function playEnvelopeSignal() {
   border-radius: 0.5rem;
   border-width: 1px;
   filter: drop-shadow(0 0 0.75rem #d1d5db);
+}
+.no-uppercase {
+  text-transform: unset !important;
 }
 </style>
