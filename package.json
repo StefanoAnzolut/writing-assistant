@@ -24,6 +24,7 @@
     "openai": "^4.12.4",
     "prettier": "^3.0.3",
     "sass": "^1.69.4",
+    "tone": "^14.7.77",
     "universal-cookie": "^6.1.1",
     "vuetify": "^3.4.0-alpha.1"
   }

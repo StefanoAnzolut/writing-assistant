@@ -4,6 +4,7 @@ import SiteHeader from './components/SiteHeader.vue'
 import { getTokenOrRefresh } from './utils/token_util'
 import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
 import type { AsyncComponentLoader } from 'vue'
+import * as Tone from 'tone'
 
 useHead({
   title: 'Writing Partner',
@@ -118,8 +119,8 @@ async function sttFromMic() {
   // Todo: Check additional effort to inlcude auto-detection of language
   const audioConfig = speechsdk.AudioConfig.fromDefaultMicrophoneInput()
   speechRecognizer.value = new speechsdk.SpeechRecognizer(speechConfig, audioConfig)
-  await synthesizeSpeech('Speak into your microphone.')
-
+  // await synthesizeSpeech('Speak into your microphone.')
+  playAudioSignal()
   speechRecognizer.value.startContinuousRecognitionAsync()
 
   speechRecognizer.value.recognizing = (_, e) => {
@@ -344,6 +345,7 @@ function registerActions(editor, actions) {
 
 function setResponse(response: string) {
   voiceResponse.value.response = response
+  playEnvelopeSignal()
   voiceResponse.value.alreadyPlayed = false
 }
 
@@ -371,6 +373,33 @@ async function focusPauseButton() {
   await nextTick()
   let playPauseButton = document.getElementById('playPauseButton')
   playPauseButton.focus()
+}
+
+function playAudioSignal() {
+  //create a synth and connect it to the main output (your speakers)
+  const synth = new Tone.Synth().toDestination()
+
+  //play a middle 'C' for the duration of an 8th note
+  synth.triggerAttackRelease('C4', '8n')
+}
+function playEnvelopeSignal() {
+  const env = new Tone.AmplitudeEnvelope({
+    attack: 0.11,
+    decay: 0.21,
+    sustain: 0.5,
+    release: 1.2,
+  }).toDestination()
+
+  // create an oscillator and connect it to the envelope
+  const osc = new Tone.Oscillator({
+    partials: [3, 2, 1],
+    type: 'custom',
+    frequency: 'C#4',
+    volume: -8,
+  })
+    .connect(env)
+    .start()
+  env.triggerAttackRelease(0.2)
 }
 </script>
 
