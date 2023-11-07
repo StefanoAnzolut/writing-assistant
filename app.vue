@@ -318,7 +318,7 @@ function onNamespaceLoaded() {
     ]
 
     registerActions(editor, actions)
-    removeButtonRole()
+    removeFormElementRoles()
   })
 }
 
@@ -344,18 +344,19 @@ function registerActions(editor, actions) {
   })
 }
 
-function removeButtonRole() {
+function removeFormElementRoles() {
   nextTick()
+  // Wait until the editor is loaded and remove form elements which overwhelm the screen reader user
   document.querySelectorAll('span > a').forEach(b => b.removeAttribute('role'))
-  observe_cke_path()
+  observeCKEditorPathAndRemoveDynamicFormElements()
 }
-function observe_cke_path() {
+function observeCKEditorPathAndRemoveDynamicFormElements() {
   // Select the node that will be observed for mutations
   const targetNode = document.getElementById('cke_1_path')
   if (!targetNode) {
     //The node we need does not exist yet.
     //Wait 500ms and try again
-    window.setTimeout(observe_cke_path, 500)
+    window.setTimeout(observeCKEditorPathAndRemoveDynamicFormElements, 500)
     return
   }
 
@@ -412,10 +413,12 @@ async function focusPauseButton() {
 
 function playAudioSignal() {
   //create a synth and connect it to the main output (your speakers)
-  const synth = new Tone.Synth().toDestination()
-
   //play a middle 'C' for the duration of an 8th note
-  synth.triggerAttackRelease('C4', '8n')
+  // delay signal tone as synthesizer needs some time to start
+  window.setTimeout(() => {
+    const synth = new Tone.Synth().toDestination()
+    synth.triggerAttackRelease('C4', '8n')
+  }, 1000)
 }
 function playEnvelopeSignal() {
   const env = new Tone.AmplitudeEnvelope({
