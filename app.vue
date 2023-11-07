@@ -26,6 +26,8 @@ const speechRecognizer = ref({})
 const overlay = ref(false)
 /** Ref to check if voice is activated */
 const voiceActive = ref(false)
+/** Voice response from ChatGPT */
+const voiceResponse = ref({ response: '', alreadyPlayed: false })
 
 const texts = reactive({
   audioPlayer: {
@@ -49,7 +51,7 @@ function submit(e: any): void {
   handleSubmit(e)
   if (voiceActive.value) {
     waitForAssistant().then(assistantResponse => {
-      synthesizeSpeech(assistantResponse)
+      setResponse(assistantResponse)
     })
   }
 }
@@ -70,7 +72,7 @@ function submitSelected(event: Event, prompt: string) {
   }
   if (voiceActive.value) {
     waitForAssistant().then(assistantResponse => {
-      synthesizeSpeech(assistantResponse)
+      setResponse(assistantResponse)
     })
   }
 }
@@ -131,7 +133,7 @@ async function sttFromMic() {
       const eventTemp = new Event('submit')
       handleSubmit(eventTemp)
       waitForAssistant().then(assistantResponse => {
-        synthesizeSpeech(assistantResponse)
+        setResponse(assistantResponse)
       })
       speechRecognizer.value.stopContinuousRecognitionAsync()
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
@@ -157,7 +159,7 @@ async function sttFromMic() {
   }
 }
 
-async function waitForAssistant() {
+async function waitForAssistant(): Promise<string> {
   // TODO: This can be improved if we change the server endpoint such that it sends the stream end event
   return new Promise((resolve, reject) => {
     setTimeout(() => {
@@ -187,6 +189,7 @@ async function synthesizeSpeech(textToSpeak: string) {
       let text
       if (result.reason === speechsdk.ResultReason.SynthesizingAudioCompleted) {
         text = `synthesis finished for "${textToSpeak}".\n`
+        focusPauseButton()
       } else if (result.reason === speechsdk.ResultReason.Canceled) {
         text = `synthesis failed. Error detail: ${result.errorDetails}.\n`
       }
@@ -206,6 +209,7 @@ async function synthesizeSpeech(textToSpeak: string) {
 
   ttsAudio.value.player.onAudioStart = () => {
     overlay.value = true
+    focusPauseButton()
     // TODO: Focus function breaks tts
     // let playPauseButton = document.getElementById('playPauseButton')
     // playPauseButton.focus()
@@ -220,6 +224,20 @@ async function pause() {
     ttsAudio.value.player.resume()
     ttsAudio.value.muted = false
   }
+}
+
+async function stop() {
+  ttsAudio.value.player.pause()
+  // stopping the audio by setting currentTime of the internal media element to the media duration e.g. fast forwarding the track to the end.
+  ttsAudio.value.player.internalAudio.currentTime = ttsAudio.value.player.internalAudio.duration
+  ttsAudio.value.muted = false
+  overlay.value = false
+}
+
+async function replayAudio() {
+  overlay.value = true
+  ttsAudio.value.player.pause()
+  ttsAudio.value.player.resume()
 }
 
 let ckeditor: AsyncComponentLoader
@@ -323,22 +341,60 @@ function registerActions(editor, actions) {
     return contextMenuListener
   })
 }
+
+function setResponse(response: string) {
+  voiceResponse.value.response = response
+  voiceResponse.value.alreadyPlayed = false
+}
+
+async function getResponse() {
+  if (voiceResponse.value.response === '') {
+    voiceResponse.value.response = 'No response from the assistant yet.'
+    synthesizeSpeech(voiceResponse.value.response)
+    voiceResponse.value.alreadyPlayed = true
+    return
+  }
+  if (voiceResponse.value.alreadyPlayed) {
+    overlay.value = true
+    replayAudio()
+    focusPauseButton()
+    return
+  }
+  synthesizeSpeech(voiceResponse.value.response)
+  overlay.value = true
+  voiceResponse.value.alreadyPlayed = true
+  focusPauseButton()
+  voiceActive.value = true
+}
+
+async function focusPauseButton() {
+  await nextTick()
+  let playPauseButton = document.getElementById('playPauseButton')
+  playPauseButton.focus()
+}
 </script>
 
 <template>
-  <SiteHeader />
+  <SiteHeader v-if="!overlay" />
   <v-container>
     <v-row>
-      <v-overlay v-model="overlay" contained class="align-center justify-center">
-        <v-btn id="playPauseButton" color="success" @click="pause()">
-          {{ ttsAudio.muted ? texts.audioPlayer.play : texts.audioPlayer.pause }}
-        </v-btn>
-      </v-overlay>
       <v-col cols="3">
         <div class="card">
-          <v-btn color="success" class="my-4" @click="sttFromMic"> Start talking </v-btn>
-          <h2 class="card-title">Chat</h2>
-          <div class="card-text">
+          <v-btn color="success" class="my-4" @click="sttFromMic" v-if="!overlay"> Start talking to ChatGPT</v-btn>
+          <v-btn color="primary" class="my-4" @click="getResponse" v-if="!overlay"> Play ChatGPT response</v-btn>
+          <v-overlay id="overlay" v-model="overlay" contained class="align-center justify-center" :persistent="true">
+            <v-btn
+              id="playPauseButton"
+              class="mx-4"
+              :color="ttsAudio.muted === false ? 'primary' : 'success'"
+              @click="pause()"
+            >
+              {{ ttsAudio.muted ? texts.audioPlayer.play : texts.audioPlayer.pause }}
+            </v-btn>
+            <v-btn class="mx-4" color="error" @click="stop()"> stop </v-btn>
+          </v-overlay>
+          <h2 class="card-title" v-if="!overlay">Chat</h2>
+          <div class="card-text" v-if="!overlay">
             <div class="chat">
               <div
                 v-for="(m, i) in messages"
@@ -361,7 +417,7 @@ function registerActions(editor, actions) {
                     autocomplete="off"
                     v-model="input"
                     placeholder="Send a message"
-                    aria-label="chat input"
+                    aria-label="Enter your prompt to ChatGPT"
                   />
                 </div>
               </form>
@@ -370,7 +426,7 @@ function registerActions(editor, actions) {
         </div>
       </v-col>
       <v-col cols="8">
-        <div class="card">
+        <div class="card" v-if="!overlay">
           <h2 class="card-title">Editor</h2>
           <div class="card-text">
             <client-only>
