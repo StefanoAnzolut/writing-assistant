@@ -80,22 +80,30 @@ function submitSelected(event: Event, prompt: string) {
 watch(messages, (_): void => {
   messages.value.forEach(function (message, idx, array) {
     if (message.role === 'assistant' && idx === array.length - 1) {
-      if (editorContent.value.includes('<p>-----</p><p>Suggestion: ')) {
-        // editorContent.value = editorContent.value.replace(
-        //   /<p>-----<\/p><p>Suggestion: .*$/g,
-        //   `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
-        // )
-        // if (!voiceInteraction.value) {
+      // if (editorContent.value.includes('<p>-----</p><p>Suggestion: ')) {
+      //   // editorContent.value = editorContent.value.replace(
+      //   //   /<p>-----<\/p><p>Suggestion: .*$/g,
+      //   //   `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
+      //   // )
+      //   if (!voiceActive.value) {
+      //     chatHistory[chatHistory.length - 1].focus()
+      //   } else {
+      //     let playPauseButton = document.getElementById('playPauseButton')
+      //     playPauseButton.focus()
+      //   }
+      // } else {
+      // editorContent.value = editorContent.value.concat(
+      //   `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
+      // )
+      if (!voiceActive.value) {
         chatHistory[chatHistory.length - 1].focus()
-        // }
-      } else {
-        // editorContent.value = editorContent.value.concat(
-        //   `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
-        // )
-        // if (!voiceInteraction.value) {
-        chatHistory[chatHistory.length - 1].focus()
-        // }
       }
+      // } else {
+      //   overlay.value = true
+      //   let playPauseButton = document.getElementById('playPauseButton')
+      //   playPauseButton.focus()
+      // }
+      // }
     }
   })
 })
@@ -126,9 +134,8 @@ async function sttFromMic() {
         synthesizeSpeech(assistantResponse)
       })
       speechRecognizer.value.stopContinuousRecognitionAsync()
-    } else if (e.result.reason == speechsdk.ResultReason.NoMatch) {
+    } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
       console.log('NOMATCH: Speech could not be recognized.')
-      // Todo: Why is this called twice?
       synthesizeSpeech('I did not understand or hear you. Stopping recording of your microphone.')
       speechRecognizer.value.stopContinuousRecognitionAsync()
     }
@@ -330,7 +337,7 @@ function registerActions(editor, actions) {
       <v-col cols="3">
         <div class="card">
           <v-btn color="success" class="my-4" @click="sttFromMic"> Start talking </v-btn>
-          <p class="card-title">Chat</p>
+          <h2 class="card-title">Chat</h2>
           <div class="card-text">
             <div class="chat">
               <div
@@ -342,12 +349,12 @@ function registerActions(editor, actions) {
                 tabindex="-1"
               >
                 <h3>
-                  {{ m.role === 'user' ? 'User: ' : 'Assistant: ' }}
+                  {{ m.role === 'user' ? 'User ' : 'Assistant ' }}
                   {{ m.content }}
                 </h3>
               </div>
               <form @submit="submit">
-                <h2>
+                <div>
                   <input
                     id="chat-input"
                     class="chat-input"
@@ -356,7 +363,7 @@ function registerActions(editor, actions) {
                     placeholder="Send a message"
                     aria-label="chat input"
                   />
-                </h2>
+                </div>
               </form>
             </div>
           </div>
@@ -364,17 +371,17 @@ function registerActions(editor, actions) {
       </v-col>
       <v-col cols="8">
         <div class="card">
-          <p class="card-title">Editor</p>
+          <h2 class="card-title">Editor</h2>
           <div class="card-text">
             <client-only>
-              <h2>
+              <div>
                 <ckeditor
                   id="text-editor"
                   :editor-url="editorUrl"
                   v-model="editorContent"
                   @namespaceloaded="onNamespaceLoaded"
                 ></ckeditor>
-              </h2>
+              </div>
             </client-only>
           </div>
         </div>
