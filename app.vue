@@ -318,6 +318,7 @@ function onNamespaceLoaded() {
     ]
 
     registerActions(editor, actions)
+    removeButtonRole()
   })
 }
 
@@ -341,6 +342,34 @@ function registerActions(editor, actions) {
   editor.contextMenu.addListener(function (element) {
     return contextMenuListener
   })
+}
+
+function removeButtonRole() {
+  nextTick()
+  document.querySelectorAll('span > a').forEach(b => b.removeAttribute('role'))
+  observe_cke_path()
+}
+function observe_cke_path() {
+  // Select the node that will be observed for mutations
+  const targetNode = document.getElementById('cke_1_path')
+
+  // Options for the observer (which mutations to observe)
+  const config = { attributes: true, childList: true, subtree: true }
+
+  // Callback function to execute when mutations are observed
+  const callback = (mutationList, observer) => {
+    for (const mutation of mutationList) {
+      if (mutation.type === 'childList') {
+        document.querySelectorAll('span > a').forEach(b => b.removeAttribute('role'))
+      }
+    }
+  }
+
+  // Create an observer instance linked to the callback function
+  const observer = new MutationObserver(callback)
+
+  // Start observing the target node for configured mutations
+  observer.observe(targetNode, config)
 }
 
 function setResponse(response: string) {
