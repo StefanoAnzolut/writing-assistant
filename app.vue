@@ -17,6 +17,9 @@ const { messages, input, handleSubmit } = useChat({
 
 /** Shared editor content between the user and the writing partner */
 const editorContent = ref('')
+
+const assistantIntermediateResponse = ref('')
+
 /** A temporary store for the selected text from the text editor for custom questions */
 const selectedTextForPrompt = ref('')
 /** Session chat history between the user and the writing partner */
@@ -56,6 +59,7 @@ function submit(e: any): void {
     selectedTextForPrompt.value = ''
   }
   handleSubmit(e)
+  playEnvelopeSignal()
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
   })
@@ -73,16 +77,22 @@ function submitSelected(event: Event, prompt: string) {
     return
   }
   if (selected_text === '') {
+    playEnvelopeSignal()
     setResponse('No text selected. Please select some text and try again.')
     return
+  } else if (prompt === 'READ') {
+    voiceResponse.value.response = selected_text
+    synthesizeSpeech(voiceResponse.value.response)
+    voiceResponse.value.alreadyPlayed = true
+    return
   }
-
   input.value = input.value.concat(prompt + selected_text)
   try {
     handleSubmit(event)
   } catch (e) {
     console.log(e)
   }
+  playEnvelopeSignal()
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
   })
@@ -90,35 +100,21 @@ function submitSelected(event: Event, prompt: string) {
 
 // TODO: Why do I need this when asking a question from the text editor to the assistant
 // As the messages are not appendend to the chat history
+
+/** Suggestion text box for the writing partner in the text editor
+ * uses the editorContent for the shared state
+ */
 watch(messages, (_): void => {
-  messages.value.forEach(function (message, idx, array) {
-    if (message.role === 'assistant' && idx === array.length - 1) {
-      // if (editorContent.value.includes('<p>-----</p><p>Suggestion: ')) {
-      //   // editorContent.value = editorContent.value.replace(
-      //   //   /<p>-----<\/p><p>Suggestion: .*$/g,
-      //   //   `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
-      //   // )
-      //   if (!voiceActive.value) {
-      //     chatHistory[chatHistory.length - 1].focus()
-      //   } else {
-      //     let playPauseButton = document.getElementById('playPauseButton')
-      //     playPauseButton.focus()
-      //   }
-      // } else {
-      // editorContent.value = editorContent.value.concat(
-      //   `<p>-----</p><p>Suggestion: ${message.content}</p><p>-----</p>`
-      // )
-      if (!voiceActive.value) {
-        chatHistory[chatHistory.length - 1].focus()
-      }
-      // } else {
-      //   overlay.value = true
-      //   let playPauseButton = document.getElementById('playPauseButton')
-      //   playPauseButton.focus()
-      // }
-      // }
+  let message = messages.value[messages.value.length - 1]
+  if (message.role === 'assistant') {
+    if (assistantIntermediateResponse.value.includes('<p>Suggestion: ')) {
+      assistantIntermediateResponse.value = message.content
+      // chatHistory[chatHistory.length - 1].focus()
+    } else {
+      assistantIntermediateResponse.value = message.content
+      // chatHistory[chatHistory.length - 1].focus()
     }
-  })
+  }
 })
 
 async function sttFromMic() {
@@ -149,13 +145,16 @@ async function sttFromMic() {
       input.value = input.value.concat(e.result.text)
       const eventTemp = new Event('submit')
       handleSubmit(eventTemp)
+      playEnvelopeSignal()
       waitForAssistant().then(assistantResponse => {
         setResponse(assistantResponse)
       })
       speechRecognizer.value.stopContinuousRecognitionAsync()
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
       console.log('NOMATCH: Speech could not be recognized.')
-      synthesizeSpeech('I did not understand or hear you. Stopping recording of your microphone.')
+      voiceResponse.value.response = 'I did not understand or hear you. Stopping recording of your microphone.'
+      synthesizeSpeech(voiceResponse.value.response)
+      voiceResponse.value.alreadyPlayed = true
       speechRecognizer.value.stopContinuousRecognitionAsync()
     }
   }
@@ -271,124 +270,93 @@ function onNamespaceLoaded() {
     // ck.editor.removeMenuItem('copy')
     // ck.editor.removeMenuItem('paste')
     editor = ck.editor
-    let contextMenu = [
+    let actions = [
       {
-        name: 'modify',
-        label: 'Modify',
-        items: [
-          {
-            name: 'summarize',
-            label: 'Summarize',
-            prompt:
-              'Summarize the following content and make it such that the response can immediately be added to a text editor: ',
-          },
-          {
-            name: 'checkSpelling',
-            label: 'Check spelling',
-            prompt:
-              'Check spelling for the following content and make it such that the response can immediately be added to a text editor: ',
-          },
-          {
-            name: 'reformulate',
-            label: 'Reformulate',
-            prompt:
-              'Reformulate the following content and make it such that the response can immediately be added to a text editor: ',
-          },
-          {
-            name: 'concise',
-            label: 'Make concise',
-            prompt:
-              'Concise the following content and make it such that the response can immediately be added to a text editor: ',
-          },
-          {
-            name: 'addStructure',
-            label: 'Add structure',
-            prompt:
-              'Add structure to the following content and make it such that the response can immediately be added to a text editor: ',
-          },
-          {
-            name: 'adaptToScientificStyle',
-            label: 'Adapt to scientific style',
-            prompt:
-              'Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor Selection start marker:',
-          },
-        ],
+        name: 'summarize',
+        label: 'Summarize',
+        prompt:
+          'Summarize the following content and make it such that the response can immediately be added to a text editor: ',
       },
       {
-        name: 'ask',
-        label: 'Ask',
-        items: [
-          {
-            name: 'define',
-            label: 'Define',
-            prompt:
-              'Define the following content and make it such that the response can immediately be added to a text editor: ',
-          },
-          {
-            name: 'findSynonyms',
-            label: 'Find synonyms',
-            prompt:
-              'Find synonyms for the following content and make it such that the response can immediately be added to a text editor: ',
-          },
-          {
-            name: 'giveWritingAdvice',
-            label: 'Give writing advice',
-            prompt:
-              'Give writing advice for the following content and make it such that the response can immediately be added to a text editor: ',
-          },
-          {
-            name: 'describeFormatting',
-            label: 'Describe formatting',
-            prompt:
-              'Focus only on the formatting of the following content and accurately return the description of the formatting structure only, do not add unseen formatting, do not return your answer as a list. Selection start marker:',
-          },
-          {
-            name: 'askQuestion',
-            label: 'Your custom question',
-            prompt: 'STORE',
-          },
-        ],
+        name: 'checkSpelling',
+        label: 'Check spelling',
+        prompt:
+          'Check spelling for the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'define',
+        label: 'Define',
+        prompt:
+          'Define the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'findSynonyms',
+        label: 'Find synonyms',
+        prompt:
+          'Find synonyms for the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'readAloud',
+        label: 'Read Aloud',
+        prompt: 'READ',
+      },
+      {
+        name: 'reformulate',
+        label: 'Formulate differently',
+        prompt:
+          'Reformulate the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'concise',
+        label: 'Make more concise',
+        prompt:
+          'Concise the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'addStructure',
+        label: 'Add structure',
+        prompt:
+          'Add structure to the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'giveWritingAdvice',
+        label: 'Give scientific writing advice',
+        prompt:
+          'Give writing advice for the following content and make it such that the response can immediately be added to a text editor: ',
+      },
+      {
+        name: 'adaptToScientificStyle',
+        label: 'Reformulate to scientific style',
+        prompt:
+          'Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor Selection start marker:',
+      },
+      {
+        name: 'askQuestion',
+        label: 'Ask your custom question',
+        prompt: 'STORE',
       },
     ]
-
-    registerActions(editor, contextMenu)
+    registerActions(editor, actions)
     removeFormElementRoles()
   })
 }
 
-function registerActions(editor, contextMenu) {
+function registerActions(editor, actions) {
   let contextMenuListener = {}
-  contextMenu.forEach(function (group) {
-    editor.addMenuGroup(group.name)
-    let groupObj = {
-      [group.name]: {
-        label: group.label,
-        group: group.name,
-        getItems: function () {
-          let ItemsObj = {}
-          group.items.forEach(function (item) {
-            ItemsObj[item.name] = CKEDITOR.TRISTATE_OFF
-          })
-          return ItemsObj
-        },
+  actions.forEach(function (action) {
+    editor.addMenuGroup('aiSuggestions')
+    editor.addCommand(action.name, {
+      exec: function (editor) {
+        const eventTemp = new Event('submit')
+        submitSelected(eventTemp, action.prompt)
       },
-    }
-    // add each item to the groupObject
-    group.items.forEach(function (item) {
-      // create the command we want to reference and add it to the editor instance
-      editor.addCommand(item.name, {
-        exec: function (editor) {
-          submitSelected(new Event('submit'), item.prompt)
-        },
-      })
-      groupObj[item.name] = {
-        label: item.label,
-        group: group.name,
-        command: item.name,
-      }
     })
-    editor.addMenuItems(groupObj)
-    contextMenuListener[group.name] = CKEDITOR.TRISTATE_OFF
+    editor.addMenuItem(action.name, {
+      label: action.label,
+      command: action.name,
+      group: 'aiSuggestions',
+    })
+    contextMenuListener[action.name] = CKEDITOR.TRISTATE_OFF
   })
   editor.contextMenu.addListener(function (element) {
     return contextMenuListener
@@ -432,8 +400,17 @@ function observeCKEditorPathAndRemoveDynamicFormElements() {
 
 function setResponse(response: string) {
   voiceResponse.value.response = response
-  playEnvelopeSignal()
   voiceResponse.value.alreadyPlayed = false
+  if (editorContent.value.includes('<p>Suggestion:')) {
+    editorContent.value = editorContent.value.replace(
+      /<p>Suggestion:.*/,
+      `<p>Suggestion: ${assistantIntermediateResponse.value}`
+    )
+    // chatHistory[chatHistory.length - 1].focus()
+  } else {
+    editorContent.value = editorContent.value.concat(`<p>Suggestion: ${assistantIntermediateResponse.value}</p>`)
+  }
+  assistantIntermediateResponse.value = ''
 }
 
 async function playResponse() {
@@ -489,7 +466,29 @@ function playEnvelopeSignal() {
   })
     .connect(env)
     .start()
-  env.triggerAttackRelease(0.3)
+
+  setTimeout(() => {
+    env.triggerAttackRelease(0.3)
+  }, 2000)
+}
+
+function repeatLastQuestion() {
+  // TODO: Improve the condition logic here, when there is time left
+  if (messages.value[messages.value.length - 1].role === 'user') {
+    input.value = messages.value[messages.value.length - 1].content
+  } else if (messages.value[messages.value.length - 2].role === 'user') {
+    input.value = messages.value[messages.value.length - 2].content
+  } else if (messages.value[messages.value.length - 3].role === 'user') {
+    input.value = messages.value[messages.value.length - 3].content
+  } else {
+    input.value = messages.value[messages.value.length - 4].content
+  }
+  const eventTemp = new Event('submit')
+  handleSubmit(eventTemp)
+  playEnvelopeSignal()
+  waitForAssistant().then(assistantResponse => {
+    setResponse(assistantResponse)
+  })
 }
 </script>
 
@@ -516,7 +515,7 @@ function playEnvelopeSignal() {
             </v-btn>
             <v-btn class="mx-4" color="error" @click="stop()"> stop </v-btn>
           </v-overlay>
-          <h2 class="card-title" v-if="!overlay">Chat</h2>
+          <h1 class="card-title" v-if="!overlay">Chat</h1>
           <div class="card-text" v-if="!overlay">
             <div class="chat">
               <div
@@ -532,6 +531,9 @@ function playEnvelopeSignal() {
                   {{ m.content }}
                 </h3>
               </div>
+              <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion" v-if="!overlay">
+                Repeat last question</v-btn
+              >
               <form @submit="submit">
                 <div>
                   <input
@@ -550,7 +552,7 @@ function playEnvelopeSignal() {
       </v-col>
       <v-col cols="8">
         <div class="card" v-if="!overlay">
-          <h2 class="card-title">Editor</h2>
+          <h1 class="card-title">Editor</h1>
           <div class="card-text">
             <client-only>
               <div>
