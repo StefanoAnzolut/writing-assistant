@@ -50,11 +50,9 @@ function submit(e: any): void {
     input.value = input.value.concat(editorContent.value)
   }
   handleSubmit(e)
-  if (voiceActive.value) {
-    waitForAssistant().then(assistantResponse => {
-      setResponse(assistantResponse)
-    })
-  }
+  waitForAssistant().then(assistantResponse => {
+    setResponse(assistantResponse)
+  })
 }
 
 function submitSelected(event: Event, prompt: string) {
@@ -71,11 +69,9 @@ function submitSelected(event: Event, prompt: string) {
   } catch (e) {
     console.log(e)
   }
-  if (voiceActive.value) {
-    waitForAssistant().then(assistantResponse => {
-      setResponse(assistantResponse)
-    })
-  }
+  waitForAssistant().then(assistantResponse => {
+    setResponse(assistantResponse)
+  })
 }
 
 // TODO: Why do I need this when asking a question from the text editor to the assistant
@@ -112,16 +108,15 @@ watch(messages, (_): void => {
 })
 
 async function sttFromMic() {
-  voiceActive.value = true
   const tokenObj = await getTokenOrRefresh()
   const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
   speechConfig.speechRecognitionLanguage = 'en-US'
   // Todo: Check additional effort to inlcude auto-detection of language
   const audioConfig = speechsdk.AudioConfig.fromDefaultMicrophoneInput()
   speechRecognizer.value = new speechsdk.SpeechRecognizer(speechConfig, audioConfig)
-  // await synthesizeSpeech('Speak into your microphone.')
   speechRecognizer.value.startContinuousRecognitionAsync()
 
+  voiceActive.value = true
   await playAudioSignal()
 
   speechRecognizer.value.recognizing = (_, e) => {
