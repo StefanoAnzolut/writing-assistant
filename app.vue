@@ -120,11 +120,18 @@ async function sttFromMic() {
   const audioConfig = speechsdk.AudioConfig.fromDefaultMicrophoneInput()
   speechRecognizer.value = new speechsdk.SpeechRecognizer(speechConfig, audioConfig)
   // await synthesizeSpeech('Speak into your microphone.')
-  playAudioSignal()
   speechRecognizer.value.startContinuousRecognitionAsync()
+
+  await playAudioSignal()
 
   speechRecognizer.value.recognizing = (_, e) => {
     console.log(`RECOGNIZING: Text=${e.result.text}`)
+  }
+
+  // Signals that the speech service has started to detect speech.
+  speechRecognizer.value.speechStartDetected = (_, e) => {
+    const str = '(speechStartDetected) SessionId: ' + e.sessionId
+    console.log(str)
   }
 
   speechRecognizer.value.recognized = (_, e) => {
@@ -411,14 +418,14 @@ async function focusPauseButton() {
   playPauseButton.focus()
 }
 
-function playAudioSignal() {
+async function playAudioSignal() {
   //create a synth and connect it to the main output (your speakers)
   //play a middle 'C' for the duration of an 8th note
   // delay signal tone as synthesizer needs some time to start
   window.setTimeout(() => {
     const synth = new Tone.Synth().toDestination()
     synth.triggerAttackRelease('C4', '8n')
-  }, 1000)
+  }, 2000)
 }
 function playEnvelopeSignal() {
   const env = new Tone.AmplitudeEnvelope({
