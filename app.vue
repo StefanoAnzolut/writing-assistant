@@ -17,6 +17,8 @@ const { messages, input, handleSubmit } = useChat({
 
 /** Shared editor content between the user and the writing partner */
 const editorContent = ref('')
+/** A temporary store for the selected text from the text editor for custom questions */
+const selectedTextForPrompt = ref('')
 /** Session chat history between the user and the writing partner */
 const chatHistory = reactive([{}])
 /** Text-To-Speech Audio Player*/
@@ -49,6 +51,10 @@ function submit(e: any): void {
   if (input.value === '') {
     input.value = input.value.concat(editorContent.value)
   }
+  if (selectedTextForPrompt.value !== '') {
+    input.value = input.value.concat(selectedTextForPrompt.value)
+    selectedTextForPrompt.value = ''
+  }
   handleSubmit(e)
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
@@ -60,9 +66,17 @@ function submitSelected(event: Event, prompt: string) {
   const selected_fragment = range.cloneContents()
   const selected_text = selected_fragment.$['textContent']
   // const selected = window.getSelection()
-  if (selected_text === '') {
+  if (prompt === 'STORE') {
+    selectedTextForPrompt.value = selected_text
+    let chatInput = document.getElementById('chat-input')
+    chatInput.focus()
     return
   }
+  if (selected_text === '') {
+    setResponse('No text selected. Please select some text and try again.')
+    return
+  }
+
   input.value = input.value.concat(prompt + selected_text)
   try {
     handleSubmit(event)
@@ -252,94 +266,129 @@ const editorUrl = 'https://a11y-editor-proxy.fly.dev/ckeditor.js'
 
 function onNamespaceLoaded() {
   CKEDITOR.on('instanceReady', function (ck) {
-    ck.editor.removeMenuItem('cut')
-    ck.editor.removeMenuItem('copy')
-    ck.editor.removeMenuItem('paste')
+    // TODO: Decide whether these context items should be kept or be removed
+    // ck.editor.removeMenuItem('cut')
+    // ck.editor.removeMenuItem('copy')
+    // ck.editor.removeMenuItem('paste')
     editor = ck.editor
-    let actions = [
+    let contextMenu = [
       {
-        name: 'summarize',
-        label: 'Summarize',
-        prompt:
-          'Summarize the following content and make it such that the response can immediately be added to a text editor: ',
+        name: 'modify',
+        label: 'Modify',
+        items: [
+          {
+            name: 'summarize',
+            label: 'Summarize',
+            prompt:
+              'Summarize the following content and make it such that the response can immediately be added to a text editor: ',
+          },
+          {
+            name: 'checkSpelling',
+            label: 'Check spelling',
+            prompt:
+              'Check spelling for the following content and make it such that the response can immediately be added to a text editor: ',
+          },
+          {
+            name: 'reformulate',
+            label: 'Reformulate',
+            prompt:
+              'Reformulate the following content and make it such that the response can immediately be added to a text editor: ',
+          },
+          {
+            name: 'concise',
+            label: 'Make concise',
+            prompt:
+              'Concise the following content and make it such that the response can immediately be added to a text editor: ',
+          },
+          {
+            name: 'addStructure',
+            label: 'Add structure',
+            prompt:
+              'Add structure to the following content and make it such that the response can immediately be added to a text editor: ',
+          },
+          {
+            name: 'adaptToScientificStyle',
+            label: 'Adapt to scientific style',
+            prompt:
+              'Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor Selection start marker:',
+          },
+        ],
       },
       {
-        name: 'checkSpelling',
-        label: 'Check spelling',
-        prompt:
-          'Check spelling for the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'reformulate',
-        label: 'Reformulate',
-        prompt:
-          'Reformulate the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'concise',
-        label: 'Concise',
-        prompt:
-          'Concise the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'addStructure',
-        label: 'Add structure',
-        prompt:
-          'Add structure to the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'define',
-        label: 'Define',
-        prompt:
-          'Define the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'findSynonyms',
-        label: 'Find synonyms',
-        prompt:
-          'Find synonyms for the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'giveWritingAdvice',
-        label: 'Give writing advice',
-        prompt:
-          'Give writing advice for the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'adaptToScientificStyle',
-        label: 'Adapt to scientific style',
-        prompt:
-          'Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor Selection start marker:',
-      },
-      {
-        name: 'describeFormatting',
-        label: 'Describe formatting',
-        prompt:
-          'Focus only on the formatting of the following content and accurately return the description of the formatting structure only, do not add unseen formatting, do not return your answer as a list. Selection start marker:',
+        name: 'ask',
+        label: 'Ask',
+        items: [
+          {
+            name: 'define',
+            label: 'Define',
+            prompt:
+              'Define the following content and make it such that the response can immediately be added to a text editor: ',
+          },
+          {
+            name: 'findSynonyms',
+            label: 'Find synonyms',
+            prompt:
+              'Find synonyms for the following content and make it such that the response can immediately be added to a text editor: ',
+          },
+          {
+            name: 'giveWritingAdvice',
+            label: 'Give writing advice',
+            prompt:
+              'Give writing advice for the following content and make it such that the response can immediately be added to a text editor: ',
+          },
+          {
+            name: 'describeFormatting',
+            label: 'Describe formatting',
+            prompt:
+              'Focus only on the formatting of the following content and accurately return the description of the formatting structure only, do not add unseen formatting, do not return your answer as a list. Selection start marker:',
+          },
+          {
+            name: 'askQuestion',
+            label: 'Your custom question',
+            prompt: 'STORE',
+          },
+        ],
       },
     ]
 
-    registerActions(editor, actions)
+    registerActions(editor, contextMenu)
     removeFormElementRoles()
   })
 }
 
-function registerActions(editor, actions) {
+function registerActions(editor, contextMenu) {
   let contextMenuListener = {}
-  actions.forEach(function (action) {
-    editor.addMenuGroup('aiSuggestions')
-    editor.addCommand(action.name, {
-      exec: function (editor) {
-        const eventTemp = new Event('submit')
-        submitSelected(eventTemp, action.prompt)
+  contextMenu.forEach(function (group) {
+    editor.addMenuGroup(group.name)
+    let groupObj = {
+      [group.name]: {
+        label: group.label,
+        group: group.name,
+        getItems: function () {
+          let ItemsObj = {}
+          group.items.forEach(function (item) {
+            ItemsObj[item.name] = CKEDITOR.TRISTATE_OFF
+          })
+          return ItemsObj
+        },
       },
+    }
+    // add each item to the groupObject
+    group.items.forEach(function (item) {
+      // create the command we want to reference and add it to the editor instance
+      editor.addCommand(item.name, {
+        exec: function (editor) {
+          submitSelected(new Event('submit'), item.prompt)
+        },
+      })
+      groupObj[item.name] = {
+        label: item.label,
+        group: group.name,
+        command: item.name,
+      }
     })
-    editor.addMenuItem(action.name, {
-      label: action.label,
-      command: action.name,
-      group: 'aiSuggestions',
-    })
-    contextMenuListener[action.name] = CKEDITOR.TRISTATE_OFF
+    editor.addMenuItems(groupObj)
+    contextMenuListener[group.name] = CKEDITOR.TRISTATE_OFF
   })
   editor.contextMenu.addListener(function (element) {
     return contextMenuListener
@@ -387,17 +436,17 @@ function setResponse(response: string) {
   voiceResponse.value.alreadyPlayed = false
 }
 
-async function getResponse() {
-  if (voiceResponse.value.response === '') {
-    voiceResponse.value.response = 'No response from the assistant yet.'
-    synthesizeSpeech(voiceResponse.value.response)
-    voiceResponse.value.alreadyPlayed = true
-    return
-  }
+async function playResponse() {
   if (voiceResponse.value.alreadyPlayed) {
     overlay.value = true
     replayAudio()
     focusPauseButton()
+    return
+  }
+  if (voiceResponse.value.response === '') {
+    voiceResponse.value.response = 'No response from the assistant yet.'
+    synthesizeSpeech(voiceResponse.value.response)
+    voiceResponse.value.alreadyPlayed = true
     return
   }
   synthesizeSpeech(voiceResponse.value.response)
@@ -409,6 +458,7 @@ async function getResponse() {
 
 async function focusPauseButton() {
   await nextTick()
+  // nextTick() to update DOM and show Overlay before focusing on the pause button
   let playPauseButton = document.getElementById('playPauseButton')
   playPauseButton.focus()
 }
@@ -452,7 +502,7 @@ function playEnvelopeSignal() {
           <v-btn color="success" class="ma-4 no-uppercase" @click="sttFromMic" v-if="!overlay">
             Start talking to ChatGPT</v-btn
           >
-          <v-btn color="primary" class="ma-4 no-uppercase" @click="getResponse" v-if="!overlay">
+          <v-btn color="primary" class="ma-4 no-uppercase" @click="playResponse" v-if="!overlay">
             Play ChatGPT response</v-btn
           >
           <v-overlay id="overlay" v-model="overlay" contained class="align-center justify-center" :persistent="true">
