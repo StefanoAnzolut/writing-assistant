@@ -23,31 +23,16 @@ const assistantIntermediateResponse = ref('')
 /** A temporary store for the selected text from the text editor for custom questions */
 const selectedTextForPrompt = ref('')
 /** Session chat history between the user and the writing partner */
-const chatHistory = reactive([{}])
-/** Text-To-Speech Audio Player*/
-const ttsAudio = ref({ player: {}, muted: false })
+// {  message: Message,  alreadyPlayed: boolean, ttsAudio: { player: {}, muted: false }}
+const chatHistory = reactive([])
 /** Speech-To-Text Recognizer */
 const speechRecognizer = ref({})
 /** Overlay for the voice interaction */
-const overlay = ref(false)
+// const overlay = ref(false)
 /** Ref to check if voice is activated */
 const voiceActive = ref(false)
 /** Voice response from ChatGPT */
 const voiceResponse = ref({ response: '', alreadyPlayed: false })
-
-const texts = reactive({
-  audioPlayer: {
-    pause: 'Pause',
-    play: 'Play',
-  },
-})
-
-// const voiceInteraction = ref(false)
-
-/** Set the references of chat messages in order to focus on specific ones */
-function updateRefs(messageElement: Element, index: number) {
-  chatHistory[index] = messageElement
-}
 
 /** Text completion submission wrapper */
 function submit(e: any): void {
@@ -59,9 +44,10 @@ function submit(e: any): void {
     selectedTextForPrompt.value = ''
   }
   handleSubmit(e)
-  playEnvelopeSignal()
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
+    playResponse(getLastAssistantResponseIndex())
+    addToChatEditor(assistantResponse)
   })
 }
 
@@ -77,12 +63,17 @@ function submitSelected(event: Event, prompt: string) {
     return
   }
   if (selected_text === '') {
-    playEnvelopeSignal()
-    setResponse('No text selected. Please select some text and try again.')
+    messages.value.push({
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: 'No text selected. Please select some text and try again.',
+    })
+    setResponse(messages.value[messages.value.length - 1].content)
+    playResponse(getLastAssistantResponseIndex())
     return
   } else if (prompt === 'READ') {
     voiceResponse.value.response = selected_text
-    synthesizeSpeech(voiceResponse.value.response)
+    synthesizeSpeech(voiceResponse.value.response, -1)
     voiceResponse.value.alreadyPlayed = true
     return
   }
@@ -92,9 +83,10 @@ function submitSelected(event: Event, prompt: string) {
   } catch (e) {
     console.log(e)
   }
-  playEnvelopeSignal()
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
+    playResponse(getLastAssistantResponseIndex())
+    addToChatEditor(assistantResponse)
   })
 }
 
@@ -105,15 +97,21 @@ function submitSelected(event: Event, prompt: string) {
  * uses the editorContent for the shared state
  */
 watch(messages, (_): void => {
+  if (chatHistory.length < messages.value.length) {
+    chatHistory.push({
+      message: {
+        id: Date.now().toString(),
+        role: messages.value[messages.value.length - 1].role,
+        content: messages.value[messages.value.length - 1].content,
+      },
+      alreadyPlayed: false,
+      ttsAudio: { player: undefined, muted: false },
+    })
+  }
   let message = messages.value[messages.value.length - 1]
   if (message.role === 'assistant') {
-    if (assistantIntermediateResponse.value.includes('<p>Suggestion: ')) {
-      assistantIntermediateResponse.value = message.content
-      // chatHistory[chatHistory.length - 1].focus()
-    } else {
-      assistantIntermediateResponse.value = message.content
-      // chatHistory[chatHistory.length - 1].focus()
-    }
+    assistantIntermediateResponse.value = message.content
+    chatHistory[chatHistory.length - 1].message.content = message.content
   }
 })
 
@@ -145,15 +143,25 @@ async function sttFromMic() {
       input.value = input.value.concat(e.result.text)
       const eventTemp = new Event('submit')
       handleSubmit(eventTemp)
-      playEnvelopeSignal()
       waitForAssistant().then(assistantResponse => {
         setResponse(assistantResponse)
+        playResponse(getLastAssistantResponseIndex())
+        addToChatEditor(assistantResponse)
       })
       speechRecognizer.value.stopContinuousRecognitionAsync()
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
       console.log('NOMATCH: Speech could not be recognized.')
-      voiceResponse.value.response = 'I did not understand or hear you. Stopping recording of your microphone.'
-      synthesizeSpeech(voiceResponse.value.response)
+      messages.value.push({
+        id: Date.now().toString(),
+        role: 'assistant',
+        message: {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: 'I did not understand or hear you. Stopping recording of your microphone.',
+        },
+      })
+      voiceResponse.value.response = messages.value[messages.value.length - 1].content
+      synthesizeSpeech(voiceResponse.value.response, getLastAssistantResponseIndex())
       voiceResponse.value.alreadyPlayed = true
       speechRecognizer.value.stopContinuousRecognitionAsync()
     }
@@ -177,25 +185,87 @@ async function sttFromMic() {
 
 async function waitForAssistant(): Promise<string> {
   // TODO: This can be improved if we change the server endpoint such that it sends the stream end event
-  return new Promise((resolve, reject) => {
+  let intervalId = setInterval(checkLastAssistantResponse, 4000)
+  await waitToClear(intervalId)
+  return new Promise((resolve, _) => {
     setTimeout(() => {
-      resolve(
-        messages.value[messages.value.length - 1].role === 'assistant'
-          ? messages.value[messages.value.length - 1].content
-          : 'No response from the assistant yet.'
-      )
-    }, 4000)
+      resolve(getLastAssistantResponse())
+    }, 2000)
   })
 }
 
-async function synthesizeSpeech(textToSpeak: string) {
+async function waitToClear(intervalId: NodeJS.Timeout) {
+  setTimeout(() => {
+    clearInterval(intervalId)
+  }, 15000)
+}
+
+function checkLastAssistantResponse() {
+  if (messages.value.length === 0) {
+    return
+  }
+  let message = messages.value[messages.value.length - 1]
+  if (!message || !message.hasOwnProperty('role')) {
+    return
+  }
+  if (message.role !== 'assistant') {
+    return
+  }
+  if (!editorContent.value.includes(message.content)) {
+    addToChatEditor(message.content)
+  }
+  if (voiceResponse.value.response !== message.content) {
+    voiceResponse.value.response = message.content
+    synthesizeSpeech(voiceResponse.value.response, getLastAssistantResponseIndex())
+  }
+}
+
+function addToChatEditor(assistantResponse: string) {
+  if (editorContent.value.includes('<p>Suggestion:')) {
+    editorContent.value = editorContent.value.replace(/<p>Suggestion:.*/, `<p>Suggestion: ${assistantResponse}`)
+    // chatHistory[chatHistory.length - 1].focus()
+  } else {
+    editorContent.value = editorContent.value.concat(`<p>Suggestion: ${assistantResponse}</p>`)
+  }
+}
+
+function getLastAssistantResponse(): string {
+  if (messages.value[messages.value.length - 1].role === 'assistant') {
+    return messages.value[messages.value.length - 1].content
+  }
+  return 'No response from the assistant yet.'
+}
+function getLastAssistantResponseIndex(): number {
+  if (messages.value[messages.value.length - 1].role === 'assistant') {
+    return messages.value.length - 1
+  } else if (messages.value[messages.value.length - 2].role === 'assistant') {
+    return messages.value.length - 2
+  } else if (messages.value[messages.value.length - 3].role === 'assistant') {
+    return messages.value.length - 3
+  } else if (messages.value[messages.value.length - 4].role === 'assistant') {
+    return messages.value.length - 4
+  }
+}
+
+async function synthesizeSpeech(textToSpeak: string, index: number) {
   const tokenObj = await getTokenOrRefresh()
   const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
   speechConfig.speechSynthesisLanguage = 'en-US'
   /** Leni & Jan für CH. Alle weiteren findet man hier: https://speech.microsoft.com/portal/voicegallery */
   speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural'
-  ttsAudio.value.player = new speechsdk.SpeakerAudioDestination()
-  const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(ttsAudio.value.player)
+  let audioPlayerRef = new speechsdk.SpeakerAudioDestination()
+  if (index !== -1) {
+    if (chatHistory[index].ttsAudio.player === undefined) {
+      chatHistory[index].ttsAudio = { player: new speechsdk.SpeakerAudioDestination(), muted: false }
+      audioPlayerRef = chatHistory[index].ttsAudio.player
+    } else {
+      // TODO Figure out a good way to continue playing the audio from the last currentTime
+      chatHistory[index].ttsAudio.player.pause()
+      chatHistory[index].ttsAudio = { player: new speechsdk.SpeakerAudioDestination(), muted: false }
+      audioPlayerRef = chatHistory[index].ttsAudio.player
+    }
+  }
+  const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(audioPlayerRef)
   let synthesizer = new speechsdk.SpeechSynthesizer(speechConfig, audioConfig)
   // Events are raised as the output audio data becomes available, which is faster than playback to an output device.
   // We must must appropriately synchronize streaming and real-time.
@@ -218,42 +288,40 @@ async function synthesizeSpeech(textToSpeak: string) {
       synthesizer.close()
     }
   )
+  if (index !== -1) {
+    chatHistory[index].ttsAudio.player.onAudioEnd = () => {
+      chatHistory[index].ttsAudio.muted = true
+      chatHistory[index].ttsAudio.player.pause()
+      // stop(index)
+    }
 
-  ttsAudio.value.player.onAudioEnd = () => {
-    overlay.value = false
-  }
-
-  ttsAudio.value.player.onAudioStart = () => {
-    overlay.value = true
-    focusPauseButton()
-    // TODO: Focus function breaks tts
-    // let playPauseButton = document.getElementById('playPauseButton')
-    // playPauseButton.focus()
+    chatHistory[index].ttsAudio.player.onAudioStart = () => {
+      focusPauseButton()
+    }
   }
 }
 
-async function pause() {
-  if (!ttsAudio.value.muted) {
-    ttsAudio.value.player.pause()
-    ttsAudio.value.muted = true
+async function pause(index: number) {
+  if (!chatHistory[index].ttsAudio.muted) {
+    chatHistory[index].ttsAudio.player.pause()
+    chatHistory[index].ttsAudio.muted = true
   } else {
-    ttsAudio.value.player.resume()
-    ttsAudio.value.muted = false
+    chatHistory[index].ttsAudio.player.resume()
+    chatHistory[index].ttsAudio.muted = false
   }
 }
 
-async function stop() {
-  ttsAudio.value.player.pause()
+async function stop(index: number) {
+  chatHistory[index].ttsAudio.player.pause()
   // stopping the audio by setting currentTime of the internal media element to the media duration e.g. fast forwarding the track to the end.
-  ttsAudio.value.player.internalAudio.currentTime = ttsAudio.value.player.internalAudio.duration
-  ttsAudio.value.muted = false
-  overlay.value = false
+  chatHistory[index].ttsAudio.player.internalAudio.currentTime =
+    chatHistory[index].ttsAudio.player.internalAudio.duration
+  chatHistory[index].ttsAudio.muted = true
 }
 
-async function replayAudio() {
-  overlay.value = true
-  ttsAudio.value.player.pause()
-  ttsAudio.value.player.resume()
+async function replayAudio(index: number) {
+  chatHistory[index].ttsAudio.player.pause()
+  chatHistory[index].ttsAudio.player.resume()
 }
 
 let ckeditor: AsyncComponentLoader
@@ -401,42 +469,28 @@ function observeCKEditorPathAndRemoveDynamicFormElements() {
 function setResponse(response: string) {
   voiceResponse.value.response = response
   voiceResponse.value.alreadyPlayed = false
-  if (editorContent.value.includes('<p>Suggestion:')) {
-    editorContent.value = editorContent.value.replace(
-      /<p>Suggestion:.*/,
-      `<p>Suggestion: ${assistantIntermediateResponse.value}`
-    )
-    // chatHistory[chatHistory.length - 1].focus()
-  } else {
-    editorContent.value = editorContent.value.concat(`<p>Suggestion: ${assistantIntermediateResponse.value}</p>`)
-  }
-  assistantIntermediateResponse.value = ''
+  chatHistory[chatHistory.length - 1].message.content = response
 }
 
-async function playResponse() {
+async function playResponse(index: number) {
   if (voiceResponse.value.alreadyPlayed) {
-    overlay.value = true
-    replayAudio()
+    // overlay.value = true
+    replayAudio(index)
     focusPauseButton()
     return
   }
-  if (voiceResponse.value.response === '') {
-    voiceResponse.value.response = 'No response from the assistant yet.'
-    synthesizeSpeech(voiceResponse.value.response)
-    voiceResponse.value.alreadyPlayed = true
-    return
-  }
-  synthesizeSpeech(voiceResponse.value.response)
-  overlay.value = true
+  synthesizeSpeech(voiceResponse.value.response, index)
+  // overlay.value = true
   voiceResponse.value.alreadyPlayed = true
   focusPauseButton()
   voiceActive.value = true
 }
 
 async function focusPauseButton() {
-  await nextTick()
+  // await nextTick()
   // nextTick() to update DOM and show Overlay before focusing on the pause button
-  let playPauseButton = document.getElementById('playPauseButton')
+  let lastAssistantResponseIndex = getLastAssistantResponseIndex()
+  let playPauseButton = document.getElementById('playPauseButton' + lastAssistantResponseIndex)
   playPauseButton.focus()
 }
 
@@ -447,28 +501,6 @@ async function playAudioSignal() {
   window.setTimeout(() => {
     const synth = new Tone.Synth().toDestination()
     synth.triggerAttackRelease('C4', '8n')
-  }, 2000)
-}
-function playEnvelopeSignal() {
-  const env = new Tone.AmplitudeEnvelope({
-    attack: 0.11,
-    decay: 0.21,
-    sustain: 0.5,
-    release: 1.2,
-  }).toDestination()
-
-  // create an oscillator and connect it to the envelope
-  const osc = new Tone.Oscillator({
-    partials: [3, 2, 1],
-    type: 'custom',
-    frequency: 'C#4',
-    volume: -8,
-  })
-    .connect(env)
-    .start()
-
-  setTimeout(() => {
-    env.triggerAttackRelease(0.3)
   }, 2000)
 }
 
@@ -485,26 +517,25 @@ function repeatLastQuestion() {
   }
   const eventTemp = new Event('submit')
   handleSubmit(eventTemp)
-  playEnvelopeSignal()
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
+    playResponse(getLastAssistantResponseIndex())
+    addToChatEditor(assistantResponse)
   })
 }
 </script>
 
 <template>
-  <SiteHeader v-if="!overlay" />
+  <SiteHeader />
   <v-container>
     <v-row>
-      <v-col cols="3">
+      <v-col cols="4">
         <div class="card">
-          <v-btn color="success" class="ma-4 no-uppercase" @click="sttFromMic" v-if="!overlay">
-            Start talking to ChatGPT</v-btn
-          >
-          <v-btn color="primary" class="ma-4 no-uppercase" @click="playResponse" v-if="!overlay">
+          <v-btn color="success" class="ma-4 no-uppercase" @click="sttFromMic"> Start talking to ChatGPT</v-btn>
+          <!-- <v-btn color="primary" class="ma-4 no-uppercase" @click="playResponse" v-if="!overlay">
             Play ChatGPT response</v-btn
-          >
-          <v-overlay id="overlay" v-model="overlay" contained class="align-center justify-center" :persistent="true">
+          > -->
+          <!-- <v-overlay id="overlay" v-model="overlay" contained class="align-center justify-center" :persistent="true">
             <v-btn
               id="playPauseButton"
               class="mx-4"
@@ -514,26 +545,37 @@ function repeatLastQuestion() {
               {{ ttsAudio.muted ? texts.audioPlayer.play : texts.audioPlayer.pause }}
             </v-btn>
             <v-btn class="mx-4" color="error" @click="stop()"> stop </v-btn>
-          </v-overlay>
-          <h1 class="card-title" v-if="!overlay">Chat</h1>
-          <div class="card-text" v-if="!overlay">
+          </v-overlay> -->
+          <h1 class="card-title">Chat</h1>
+          <div class="card-text">
             <div class="chat">
-              <div
-                v-for="(m, i) in messages"
-                :index="i"
-                key="m.id"
-                class="chat-message"
-                :ref="el => updateRefs(el, i)"
-                tabindex="-1"
-              >
+              <div v-for="(m, i) in chatHistory" :index="i" key="m.id" class="chat-message" tabindex="-1">
                 <h3>
-                  {{ m.role === 'user' ? 'User ' : 'Assistant ' }}
-                  {{ m.content }}
+                  {{ chatHistory[i].message.content }}
                 </h3>
+                <div v-if="chatHistory[i].message.role === 'assistant'">
+                  <v-btn
+                    :id="'playPauseButton' + i"
+                    :icon="chatHistory[i].ttsAudio.muted ? 'mdi-play' : 'mdi-pause'"
+                    class="chat-button"
+                    color="primary"
+                    @click="pause(i)"
+                    :aria-label="chatHistory[i].ttsAudio.muted ? 'Play' : 'Pause'"
+                    size="small"
+                  >
+                  </v-btn>
+                  <v-btn
+                    :id="'stopButton' + i"
+                    icon="mdi-stop"
+                    class="chat-button"
+                    color="error"
+                    @click="stop(i)"
+                    size="small"
+                    aria-label="Stop"
+                  ></v-btn>
+                </div>
               </div>
-              <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion" v-if="!overlay">
-                Repeat last question</v-btn
-              >
+              <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion"> Repeat last question</v-btn>
               <form @submit="submit">
                 <div>
                   <input
@@ -551,7 +593,7 @@ function repeatLastQuestion() {
         </div>
       </v-col>
       <v-col cols="8">
-        <div class="card" v-if="!overlay">
+        <div class="card">
           <h1 class="card-title">Editor</h1>
           <div class="card-text">
             <client-only>
@@ -631,5 +673,10 @@ function repeatLastQuestion() {
 }
 .no-uppercase {
   text-transform: unset !important;
+}
+.chat-button {
+  display: block;
+  margin-left: auto;
+  margin-right: 0;
 }
 </style>
