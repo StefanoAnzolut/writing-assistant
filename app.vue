@@ -5,6 +5,10 @@ import { getTokenOrRefresh } from './utils/token_util'
 import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
 import type { AsyncComponentLoader } from 'vue'
 import * as Tone from 'tone'
+import type { ChatHistory } from './models/ChatHistory'
+import { removeFormElementRoles } from './utils/CKEditor'
+import type { AudioPlayer } from './models/AudioPlayer'
+import type { ChatMessage } from './models/ChatMessage'
 
 useHead({
   title: 'Writing Partner',
@@ -18,21 +22,36 @@ const { messages, input, handleSubmit } = useChat({
 /** Shared editor content between the user and the writing partner */
 const editorContent = ref('')
 
+/** Voice response from ChatGPT */
+const voiceResponse = ref('')
+
 const assistantIntermediateResponse = ref('')
 
 /** A temporary store for the selected text from the text editor for custom questions */
 const selectedTextForPrompt = ref('')
 /** Session chat history between the user and the writing partner */
-// {  message: Message,  alreadyPlayed: boolean, ttsAudio: { player: {}, muted: false }}
-const chatHistory = reactive([])
+const chatHistory: ChatHistory = reactive({ messages: [] })
 /** Speech-To-Text Recognizer */
 const speechRecognizer = ref({})
 /** Overlay for the voice interaction */
 // const overlay = ref(false)
 /** Ref to check if voice is activated */
 const voiceActive = ref(false)
-/** Voice response from ChatGPT */
-const voiceResponse = ref({ response: '', alreadyPlayed: false })
+
+/** Load and set editor from proxy file server,
+ *  as there were several issues with providing static files via Nuxt.
+ * TODO: Improve how the text editor is loaded */
+const editorUrl = 'https://a11y-editor-proxy.fly.dev/ckeditor.js'
+let ckeditor: AsyncComponentLoader
+if (process.client) {
+  ckeditor = defineAsyncComponent(() => import('@mayasabha/ckeditor4-vue3').then(module => module.component))
+}
+function onNamespaceLoaded() {
+  CKEDITOR.on('instanceReady', function (ck) {
+    registerActions(ck.editor, submitSelectedCallback)
+    removeFormElementRoles()
+  })
+}
 
 /** Text completion submission wrapper */
 function submit(e: any): void {
@@ -46,23 +65,40 @@ function submit(e: any): void {
   handleSubmit(e)
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
-    playResponse(getLastAssistantResponseIndex())
+    addToVoiceResponse(assistantResponse)
     addToChatEditor(assistantResponse)
+    playResponse(getLastAssistantResponseIndex())
   })
 }
 
-function submitSelected(event: Event, prompt: string) {
-  const range = editor.getSelection().getRanges()[0]
-  const selected_fragment = range.cloneContents()
-  const selected_text = selected_fragment.$['textContent']
+var startTime, endTime
+
+function start() {
+  startTime = new Date()
+}
+
+function end() {
+  endTime = new Date()
+  var timeDiff = endTime - startTime //in ms
+  // strip the ms
+  timeDiff /= 1000
+
+  // get seconds
+  var seconds = Math.round(timeDiff)
+  console.log(seconds + ' seconds')
+}
+
+function submitSelectedCallback(event: Event, prompt: string, selectedText: string) {
   // const selected = window.getSelection()
   if (prompt === 'STORE') {
-    selectedTextForPrompt.value = selected_text
-    let chatInput = document.getElementById('chat-input')
-    chatInput.focus()
+    selectedTextForPrompt.value = selectedText
+    const chatInput = document.getElementById('chat-input')
+    if (chatInput) {
+      chatInput.focus()
+    }
     return
   }
-  if (selected_text === '') {
+  if (selectedText === '') {
     messages.value.push({
       id: Date.now().toString(),
       role: 'assistant',
@@ -72,12 +108,10 @@ function submitSelected(event: Event, prompt: string) {
     playResponse(getLastAssistantResponseIndex())
     return
   } else if (prompt === 'READ') {
-    voiceResponse.value.response = selected_text
-    synthesizeSpeech(voiceResponse.value.response, -1)
-    voiceResponse.value.alreadyPlayed = true
+    synthesizeSpeech(selectedText, undefined)
     return
   }
-  input.value = input.value.concat(prompt + selected_text)
+  input.value = input.value.concat(prompt + selectedText)
   try {
     handleSubmit(event)
   } catch (e) {
@@ -85,8 +119,9 @@ function submitSelected(event: Event, prompt: string) {
   }
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
-    playResponse(getLastAssistantResponseIndex())
+    addToVoiceResponse(assistantResponse)
     addToChatEditor(assistantResponse)
+    playResponse(getLastAssistantResponseIndex())
   })
 }
 
@@ -97,21 +132,20 @@ function submitSelected(event: Event, prompt: string) {
  * uses the editorContent for the shared state
  */
 watch(messages, (_): void => {
-  if (chatHistory.length < messages.value.length) {
-    chatHistory.push({
+  if (chatHistory.messages.length < messages.value.length) {
+    chatHistory.messages.push({
       message: {
         id: Date.now().toString(),
         role: messages.value[messages.value.length - 1].role,
         content: messages.value[messages.value.length - 1].content,
       },
-      alreadyPlayed: false,
-      ttsAudio: { player: undefined, muted: false },
+      audioPlayer: { player: new speechsdk.SpeakerAudioDestination(), muted: false, alreadyPlayed: false },
     })
   }
   let message = messages.value[messages.value.length - 1]
   if (message.role === 'assistant') {
     assistantIntermediateResponse.value = message.content
-    chatHistory[chatHistory.length - 1].message.content = message.content
+    chatHistory.messages[chatHistory.messages.length - 1].message.content = message.content
   }
 })
 
@@ -125,7 +159,11 @@ async function sttFromMic() {
   speechRecognizer.value.startContinuousRecognitionAsync()
 
   voiceActive.value = true
-  await playAudioSignal()
+  // delay signal tone as synthesizer needs some time to start
+  window.setTimeout(() => {
+    const synth = new Tone.Synth().toDestination()
+    synth.triggerAttackRelease('C4', '8n')
+  }, 2000)
 
   speechRecognizer.value.recognizing = (_, e) => {
     console.log(`RECOGNIZING: Text=${e.result.text}`)
@@ -145,24 +183,13 @@ async function sttFromMic() {
       handleSubmit(eventTemp)
       waitForAssistant().then(assistantResponse => {
         setResponse(assistantResponse)
-        playResponse(getLastAssistantResponseIndex())
         addToChatEditor(assistantResponse)
+        playResponse(getLastAssistantResponseIndex())
       })
       speechRecognizer.value.stopContinuousRecognitionAsync()
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
       console.log('NOMATCH: Speech could not be recognized.')
-      messages.value.push({
-        id: Date.now().toString(),
-        role: 'assistant',
-        message: {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: 'I did not understand or hear you. Stopping recording of your microphone.',
-        },
-      })
-      voiceResponse.value.response = messages.value[messages.value.length - 1].content
-      synthesizeSpeech(voiceResponse.value.response, getLastAssistantResponseIndex())
-      voiceResponse.value.alreadyPlayed = true
+      synthesizeSpeech('I did not understand or hear you. Stopping recording of your microphone.', undefined)
       speechRecognizer.value.stopContinuousRecognitionAsync()
     }
   }
@@ -185,7 +212,7 @@ async function sttFromMic() {
 
 async function waitForAssistant(): Promise<string> {
   // TODO: This can be improved if we change the server endpoint such that it sends the stream end event
-  let intervalId = setInterval(checkLastAssistantResponse, 4000)
+  let intervalId = setInterval(checkLastAssistantResponse, 7000)
   await waitToClear(intervalId)
   return new Promise((resolve, _) => {
     setTimeout(() => {
@@ -214,16 +241,20 @@ function checkLastAssistantResponse() {
   if (!editorContent.value.includes(message.content)) {
     addToChatEditor(message.content)
   }
-  if (voiceResponse.value.response !== message.content) {
-    voiceResponse.value.response = message.content
-    synthesizeSpeech(voiceResponse.value.response, getLastAssistantResponseIndex())
+  if (!voiceResponse.value.includes(message.content)) {
+    voiceResponse.value = message.content
+    synthesizeSpeech(voiceResponse.value, getAudioPlayer(getLastAssistantResponseIndex()))
+    focusPauseButton()
   }
+}
+
+function addToVoiceResponse(assistantResponse: string) {
+  voiceResponse.value = assistantResponse
 }
 
 function addToChatEditor(assistantResponse: string) {
   if (editorContent.value.includes('<p>Suggestion:')) {
     editorContent.value = editorContent.value.replace(/<p>Suggestion:.*/, `<p>Suggestion: ${assistantResponse}`)
-    // chatHistory[chatHistory.length - 1].focus()
   } else {
     editorContent.value = editorContent.value.concat(`<p>Suggestion: ${assistantResponse}</p>`)
   }
@@ -236,46 +267,63 @@ function getLastAssistantResponse(): string {
   return 'No response from the assistant yet.'
 }
 function getLastAssistantResponseIndex(): number {
-  if (messages.value[messages.value.length - 1].role === 'assistant') {
-    return messages.value.length - 1
-  } else if (messages.value[messages.value.length - 2].role === 'assistant') {
-    return messages.value.length - 2
-  } else if (messages.value[messages.value.length - 3].role === 'assistant') {
-    return messages.value.length - 3
-  } else if (messages.value[messages.value.length - 4].role === 'assistant') {
-    return messages.value.length - 4
+  let lastAssistantResponseIndex = messages.value.length - 1
+  while (messages.value[lastAssistantResponseIndex].role !== 'assistant') {
+    lastAssistantResponseIndex--
   }
+  return lastAssistantResponseIndex
+}
+function getAudioPlayer(index: number): AudioPlayer {
+  return chatHistory.messages[index].audioPlayer
 }
 
-async function synthesizeSpeech(textToSpeak: string, index: number) {
+async function synthesizeSpeech(textToSpeak: string, audioPlayer: AudioPlayer | undefined) {
+  if (textToSpeak === '') {
+    return
+  }
   const tokenObj = await getTokenOrRefresh()
   const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
   speechConfig.speechSynthesisLanguage = 'en-US'
   /** Leni & Jan für CH. Alle weiteren findet man hier: https://speech.microsoft.com/portal/voicegallery */
   speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural'
-  let audioPlayerRef = new speechsdk.SpeakerAudioDestination()
-  if (index !== -1) {
-    if (chatHistory[index].ttsAudio.player === undefined) {
-      chatHistory[index].ttsAudio = { player: new speechsdk.SpeakerAudioDestination(), muted: false }
-      audioPlayerRef = chatHistory[index].ttsAudio.player
-    } else {
-      // TODO Figure out a good way to continue playing the audio from the last currentTime
-      chatHistory[index].ttsAudio.player.pause()
-      chatHistory[index].ttsAudio = { player: new speechsdk.SpeakerAudioDestination(), muted: false }
-      audioPlayerRef = chatHistory[index].ttsAudio.player
-    }
+  let newAudioPlayer = {
+    player: new speechsdk.SpeakerAudioDestination(),
+    muted: false,
+    alreadyPlayed: true,
   }
-  const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(audioPlayerRef)
+  if (audioPlayer !== undefined) {
+    audioPlayer.player.pause()
+    // TODO Figure out a good way to continue playing the audio from the last currentTime
+    // set currentTime directly on speakerAudioDestination does not work
+    audioPlayer = {
+      player: new speechsdk.SpeakerAudioDestination(),
+      muted: false,
+      alreadyPlayed: false,
+    }
+    audioPlayer.player.onAudioEnd = () => {
+      audioPlayer.muted = true
+      audioPlayer.player.pause()
+      // stop(index)
+    }
+    audioPlayer.player.onAudioStart = () => {
+      // focusPauseButton()
+    }
+    newAudioPlayer.player = audioPlayer.player
+  }
+
+  const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(newAudioPlayer.player)
   let synthesizer = new speechsdk.SpeechSynthesizer(speechConfig, audioConfig)
   // Events are raised as the output audio data becomes available, which is faster than playback to an output device.
   // We must must appropriately synchronize streaming and real-time.
+  start()
   synthesizer.speakTextAsync(
     textToSpeak,
     result => {
       let text
       if (result.reason === speechsdk.ResultReason.SynthesizingAudioCompleted) {
         text = `synthesis finished for "${textToSpeak}".\n`
-        focusPauseButton()
+        end()
+        // focusPauseButton()
       } else if (result.reason === speechsdk.ResultReason.Canceled) {
         text = `synthesis failed. Error detail: ${result.errorDetails}.\n`
       }
@@ -284,243 +332,44 @@ async function synthesizeSpeech(textToSpeak: string, index: number) {
     },
     function (err) {
       console.log(`Error: ${err}.\n`)
-
       synthesizer.close()
     }
   )
-  if (index !== -1) {
-    chatHistory[index].ttsAudio.player.onAudioEnd = () => {
-      chatHistory[index].ttsAudio.muted = true
-      chatHistory[index].ttsAudio.player.pause()
-      // stop(index)
-    }
-
-    chatHistory[index].ttsAudio.player.onAudioStart = () => {
-      focusPauseButton()
-    }
-  }
-}
-
-async function pause(index: number) {
-  if (!chatHistory[index].ttsAudio.muted) {
-    chatHistory[index].ttsAudio.player.pause()
-    chatHistory[index].ttsAudio.muted = true
-  } else {
-    chatHistory[index].ttsAudio.player.resume()
-    chatHistory[index].ttsAudio.muted = false
-  }
-}
-
-async function stop(index: number) {
-  chatHistory[index].ttsAudio.player.pause()
-  // stopping the audio by setting currentTime of the internal media element to the media duration e.g. fast forwarding the track to the end.
-  chatHistory[index].ttsAudio.player.internalAudio.currentTime =
-    chatHistory[index].ttsAudio.player.internalAudio.duration
-  chatHistory[index].ttsAudio.muted = true
-}
-
-async function replayAudio(index: number) {
-  chatHistory[index].ttsAudio.player.pause()
-  chatHistory[index].ttsAudio.player.resume()
-}
-
-let ckeditor: AsyncComponentLoader
-let editor: any
-if (process.client) {
-  ckeditor = defineAsyncComponent(() => import('@mayasabha/ckeditor4-vue3').then(module => module.component))
-}
-const editorUrl = 'https://a11y-editor-proxy.fly.dev/ckeditor.js'
-
-function onNamespaceLoaded() {
-  CKEDITOR.on('instanceReady', function (ck) {
-    // TODO: Decide whether these context items should be kept or be removed
-    // ck.editor.removeMenuItem('cut')
-    // ck.editor.removeMenuItem('copy')
-    // ck.editor.removeMenuItem('paste')
-    editor = ck.editor
-    let actions = [
-      {
-        name: 'summarize',
-        label: 'Summarize',
-        prompt:
-          'Summarize the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'checkSpelling',
-        label: 'Check spelling',
-        prompt:
-          'Check spelling for the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'define',
-        label: 'Define',
-        prompt:
-          'Define the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'findSynonyms',
-        label: 'Find synonyms',
-        prompt:
-          'Find synonyms for the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'readAloud',
-        label: 'Read Aloud',
-        prompt: 'READ',
-      },
-      {
-        name: 'reformulate',
-        label: 'Formulate differently',
-        prompt:
-          'Reformulate the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'concise',
-        label: 'Make more concise',
-        prompt:
-          'Concise the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'addStructure',
-        label: 'Add structure',
-        prompt:
-          'Add structure to the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'giveWritingAdvice',
-        label: 'Give scientific writing advice',
-        prompt:
-          'Give writing advice for the following content and make it such that the response can immediately be added to a text editor: ',
-      },
-      {
-        name: 'adaptToScientificStyle',
-        label: 'Reformulate to scientific style',
-        prompt:
-          'Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor Selection start marker:',
-      },
-      {
-        name: 'askQuestion',
-        label: 'Ask your custom question',
-        prompt: 'STORE',
-      },
-    ]
-    registerActions(editor, actions)
-    removeFormElementRoles()
-  })
-}
-
-function registerActions(editor, actions) {
-  let contextMenuListener = {}
-  actions.forEach(function (action) {
-    editor.addMenuGroup('aiSuggestions')
-    editor.addCommand(action.name, {
-      exec: function (editor) {
-        const eventTemp = new Event('submit')
-        submitSelected(eventTemp, action.prompt)
-      },
-    })
-    editor.addMenuItem(action.name, {
-      label: action.label,
-      command: action.name,
-      group: 'aiSuggestions',
-    })
-    contextMenuListener[action.name] = CKEDITOR.TRISTATE_OFF
-  })
-  editor.contextMenu.addListener(function (element) {
-    return contextMenuListener
-  })
-}
-
-function removeFormElementRoles() {
-  nextTick()
-  // Wait until the editor is loaded and remove form elements which overwhelm the screen reader user
-  document.querySelectorAll('span > a').forEach(b => b.removeAttribute('role'))
-  observeCKEditorPathAndRemoveDynamicFormElements()
-}
-function observeCKEditorPathAndRemoveDynamicFormElements() {
-  // Select the node that will be observed for mutations
-  const targetNode = document.getElementById('cke_1_path')
-  if (!targetNode) {
-    //The node we need does not exist yet.
-    //Wait 500ms and try again
-    window.setTimeout(observeCKEditorPathAndRemoveDynamicFormElements, 500)
-    return
-  }
-
-  // Options for the observer (which mutations to observe)
-  const config = { attributes: true, childList: true, subtree: true }
-
-  // Callback function to execute when mutations are observed
-  const callback = (mutationList, observer) => {
-    for (const mutation of mutationList) {
-      if (mutation.type === 'childList') {
-        document.querySelectorAll('span > a').forEach(b => b.removeAttribute('role'))
-      }
-    }
-  }
-
-  // Create an observer instance linked to the callback function
-  const observer = new MutationObserver(callback)
-
-  // Start observing the target node for configured mutations
-  observer.observe(targetNode, config)
 }
 
 function setResponse(response: string) {
-  voiceResponse.value.response = response
-  voiceResponse.value.alreadyPlayed = false
-  chatHistory[chatHistory.length - 1].message.content = response
+  chatHistory.messages[chatHistory.messages.length - 1].message.content = response
 }
 
 async function playResponse(index: number) {
-  if (voiceResponse.value.alreadyPlayed) {
-    // overlay.value = true
-    replayAudio(index)
+  let audioPlayer = getAudioPlayer(index)
+  if (audioPlayer.alreadyPlayed) {
+    replayAudio(audioPlayer)
     focusPauseButton()
     return
   }
-  synthesizeSpeech(voiceResponse.value.response, index)
-  // overlay.value = true
-  voiceResponse.value.alreadyPlayed = true
+  synthesizeSpeech(voiceResponse.value, audioPlayer)
+  audioPlayer.alreadyPlayed = true
   focusPauseButton()
   voiceActive.value = true
 }
 
 async function focusPauseButton() {
-  // await nextTick()
+  await nextTick()
   // nextTick() to update DOM and show Overlay before focusing on the pause button
-  let lastAssistantResponseIndex = getLastAssistantResponseIndex()
-  let playPauseButton = document.getElementById('playPauseButton' + lastAssistantResponseIndex)
+  let playPauseButton = document.getElementById('playPauseButton' + getLastAssistantResponseIndex())
   playPauseButton.focus()
 }
 
-async function playAudioSignal() {
-  //create a synth and connect it to the main output (your speakers)
-  //play a middle 'C' for the duration of an 8th note
-  // delay signal tone as synthesizer needs some time to start
-  window.setTimeout(() => {
-    const synth = new Tone.Synth().toDestination()
-    synth.triggerAttackRelease('C4', '8n')
-  }, 2000)
-}
-
 function repeatLastQuestion() {
-  // TODO: Improve the condition logic here, when there is time left
-  if (messages.value[messages.value.length - 1].role === 'user') {
-    input.value = messages.value[messages.value.length - 1].content
-  } else if (messages.value[messages.value.length - 2].role === 'user') {
-    input.value = messages.value[messages.value.length - 2].content
-  } else if (messages.value[messages.value.length - 3].role === 'user') {
-    input.value = messages.value[messages.value.length - 3].content
-  } else {
-    input.value = messages.value[messages.value.length - 4].content
-  }
-  const eventTemp = new Event('submit')
-  handleSubmit(eventTemp)
+  let lastReponseIndex = getLastAssistantResponseIndex()
+  input.value = messages.value[lastReponseIndex].content
+  handleSubmit(new Event('submit'))
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
-    playResponse(getLastAssistantResponseIndex())
+    addToVoiceResponse(assistantResponse)
     addToChatEditor(assistantResponse)
+    playResponse(lastReponseIndex)
   })
 }
 </script>
@@ -532,35 +381,21 @@ function repeatLastQuestion() {
       <v-col cols="4">
         <div class="card">
           <v-btn color="success" class="ma-4 no-uppercase" @click="sttFromMic"> Start talking to ChatGPT</v-btn>
-          <!-- <v-btn color="primary" class="ma-4 no-uppercase" @click="playResponse" v-if="!overlay">
-            Play ChatGPT response</v-btn
-          > -->
-          <!-- <v-overlay id="overlay" v-model="overlay" contained class="align-center justify-center" :persistent="true">
-            <v-btn
-              id="playPauseButton"
-              class="mx-4"
-              :color="ttsAudio.muted === false ? 'primary' : 'success'"
-              @click="pause()"
-            >
-              {{ ttsAudio.muted ? texts.audioPlayer.play : texts.audioPlayer.pause }}
-            </v-btn>
-            <v-btn class="mx-4" color="error" @click="stop()"> stop </v-btn>
-          </v-overlay> -->
           <h1 class="card-title">Chat</h1>
           <div class="card-text">
             <div class="chat">
-              <div v-for="(m, i) in chatHistory" :index="i" key="m.id" class="chat-message" tabindex="-1">
+              <div v-for="(entry, i) in chatHistory.messages" :index="i" key="m.id" class="chat-message" tabindex="-1">
                 <h3>
-                  {{ chatHistory[i].message.content }}
+                  {{ entry.message.content }}
                 </h3>
-                <div v-if="chatHistory[i].message.role === 'assistant'">
+                <div v-if="entry.message.role === 'assistant'">
                   <v-btn
                     :id="'playPauseButton' + i"
-                    :icon="chatHistory[i].ttsAudio.muted ? 'mdi-play' : 'mdi-pause'"
+                    :icon="entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
                     class="chat-button"
                     color="primary"
-                    @click="pause(i)"
-                    :aria-label="chatHistory[i].ttsAudio.muted ? 'Play' : 'Pause'"
+                    @click="pause(entry.audioPlayer)"
+                    :aria-label="entry.audioPlayer.muted ? 'Play' : 'Pause'"
                     size="small"
                   >
                   </v-btn>
@@ -569,7 +404,7 @@ function repeatLastQuestion() {
                     icon="mdi-stop"
                     class="chat-button"
                     color="error"
-                    @click="stop(i)"
+                    @click="stop(entry.audioPlayer)"
                     size="small"
                     aria-label="Stop"
                   ></v-btn>
