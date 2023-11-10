@@ -35,8 +35,6 @@ const chatHistory: ChatHistory = reactive({ messages: [] })
 const speechRecognizer = ref({})
 /** Overlay for the voice interaction */
 // const overlay = ref(false)
-/** Ref to check if voice is activated */
-const voiceActive = ref(false)
 
 /** Load and set editor from proxy file server,
  *  as there were several issues with providing static files via Nuxt.
@@ -157,8 +155,6 @@ async function sttFromMic() {
   const audioConfig = speechsdk.AudioConfig.fromDefaultMicrophoneInput()
   speechRecognizer.value = new speechsdk.SpeechRecognizer(speechConfig, audioConfig)
   speechRecognizer.value.startContinuousRecognitionAsync()
-
-  voiceActive.value = true
   // delay signal tone as synthesizer needs some time to start
   window.setTimeout(() => {
     const synth = new Tone.Synth().toDestination()
@@ -351,7 +347,6 @@ async function playResponse(index: number) {
   synthesizeSpeech(voiceResponse.value, audioPlayer)
   audioPlayer.alreadyPlayed = true
   focusPauseButton()
-  voiceActive.value = true
 }
 
 async function focusPauseButton() {
