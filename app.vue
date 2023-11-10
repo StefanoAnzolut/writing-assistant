@@ -9,6 +9,7 @@ import type { ChatHistory } from './models/ChatHistory'
 import { removeFormElementRoles } from './utils/CKEditor'
 import type { AudioPlayer } from './models/AudioPlayer'
 import type { ChatMessage } from './models/ChatMessage'
+import { pause, stop, replayAudio } from './composables/audio-player'
 
 useHead({
   title: 'Writing Partner',
@@ -106,7 +107,7 @@ function submitSelectedCallback(event: Event, prompt: string, selectedText: stri
     playResponse(getLastAssistantResponseIndex())
     return
   } else if (prompt === 'READ') {
-    synthesizeSpeech(selectedText, undefined)
+    synthesizeSpeech(selectedText, -1)
     return
   }
   input.value = input.value.concat(prompt + selectedText)
@@ -185,7 +186,7 @@ async function sttFromMic() {
       speechRecognizer.value.stopContinuousRecognitionAsync()
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
       console.log('NOMATCH: Speech could not be recognized.')
-      synthesizeSpeech('I did not understand or hear you. Stopping recording of your microphone.', undefined)
+      synthesizeSpeech('I did not understand or hear you. Stopping recording of your microphone.', -1)
       speechRecognizer.value.stopContinuousRecognitionAsync()
     }
   }
@@ -239,7 +240,7 @@ function checkLastAssistantResponse() {
   }
   if (!voiceResponse.value.includes(message.content)) {
     voiceResponse.value = message.content
-    synthesizeSpeech(voiceResponse.value, getAudioPlayer(getLastAssistantResponseIndex()))
+    synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
     focusPauseButton()
   }
 }
@@ -269,11 +270,19 @@ function getLastAssistantResponseIndex(): number {
   }
   return lastAssistantResponseIndex
 }
+function getLastUserResponseIndex(): number {
+  let lastUserResponseIndex = messages.value.length - 1
+  while (messages.value[lastUserResponseIndex].role !== 'user') {
+    lastUserResponseIndex--
+  }
+  return lastUserResponseIndex
+}
+
 function getAudioPlayer(index: number): AudioPlayer {
   return chatHistory.messages[index].audioPlayer
 }
 
-async function synthesizeSpeech(textToSpeak: string, audioPlayer: AudioPlayer | undefined) {
+async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
   if (textToSpeak === '') {
     return
   }
@@ -287,24 +296,26 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayer: AudioPlayer | 
     muted: false,
     alreadyPlayed: true,
   }
-  if (audioPlayer !== undefined) {
+  if (audioPlayerIndex !== -1) {
+    let audioPlayer = getAudioPlayer(audioPlayerIndex)
     audioPlayer.player.pause()
     // TODO Figure out a good way to continue playing the audio from the last currentTime
     // set currentTime directly on speakerAudioDestination does not work
     audioPlayer = {
       player: new speechsdk.SpeakerAudioDestination(),
       muted: false,
-      alreadyPlayed: false,
+      alreadyPlayed: true,
     }
-    audioPlayer.player.onAudioEnd = () => {
-      audioPlayer.muted = true
-      audioPlayer.player.pause()
-      // stop(index)
+    audioPlayer.player.onAudioEnd = audioPlayer => {
+      audioPlayer.pause()
+      chatHistory.messages[audioPlayerIndex].audioPlayer.muted = true
+      chatHistory.messages[audioPlayerIndex].audioPlayer.alreadyPlayed = true
     }
     audioPlayer.player.onAudioStart = () => {
       // focusPauseButton()
     }
     newAudioPlayer.player = audioPlayer.player
+    chatHistory.messages[audioPlayerIndex].audioPlayer = newAudioPlayer
   }
 
   const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(newAudioPlayer.player)
@@ -344,8 +355,7 @@ async function playResponse(index: number) {
     focusPauseButton()
     return
   }
-  synthesizeSpeech(voiceResponse.value, audioPlayer)
-  audioPlayer.alreadyPlayed = true
+  synthesizeSpeech(voiceResponse.value, index)
   focusPauseButton()
 }
 
@@ -357,14 +367,14 @@ async function focusPauseButton() {
 }
 
 function repeatLastQuestion() {
-  let lastReponseIndex = getLastAssistantResponseIndex()
-  input.value = messages.value[lastReponseIndex].content
+  let lastUserReponseIndex = getLastUserResponseIndex()
+  input.value = messages.value[lastUserReponseIndex].content
   handleSubmit(new Event('submit'))
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
     addToVoiceResponse(assistantResponse)
     addToChatEditor(assistantResponse)
-    playResponse(lastReponseIndex)
+    playResponse(getLastAssistantResponseIndex())
   })
 }
 </script>
