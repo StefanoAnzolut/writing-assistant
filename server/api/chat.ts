@@ -1,6 +1,5 @@
 import OpenAI from 'openai'
 import { OpenAIStream } from 'ai'
-import { CreateChatCompletionRequestMessage } from 'openai/resources/chat'
 
 export default defineLazyEventHandler(async () => {
   const apiKey = process.env.AZURE_API_KEY
@@ -21,11 +20,11 @@ export default defineLazyEventHandler(async () => {
 
   return defineEventHandler(async event => {
     // Extract the `prompt` from the body of the request
-    const { messages } = (await readBody(event)) as {
-      messages: CreateChatCompletionRequestMessage[]
-    }
+    const { messages } = await readBody(event)
+
     console.log('The following messages were received:\n')
     console.log(messages)
+
     // Ask OpenAI for a streaming chat completion given the prompt
     const response = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
@@ -38,13 +37,13 @@ export default defineLazyEventHandler(async () => {
 
     // TODO: Evaluate necessity of adding finish_reason that marks the end
     // of a streaming completion request and sent it to the client
-    //
     // const teedResponse = response.tee()
     // for await (const chunk of teedResponse[0]) {
     //   console.log(chunk)
     //   if (typeof chunk.choices !== 'undefined' && chunk.choices.length > 0) {
     //     if (chunk.choices[0].finish_reason === 'stop') {
     //       console.log('stop!!')
+    //       return { finish_reason: 'stop' }
     //     }
     //   }
     // }
