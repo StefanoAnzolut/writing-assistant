@@ -32,10 +32,8 @@ const selectedTextForPrompt = ref('')
 const chatHistory: ChatHistory = reactive({ messages: [] as ChatMessage[] })
 /** Speech-To-Text Recognizer */
 const speechRecognizer = ref({} as speechsdk.SpeechRecognizer)
-
-const newMessage = ref(true)
-
-const currentTime = ref(-1)
+/** Current time of last playing audio Player */
+const prevAudioPlayer = ref({} as AudioPlayer)
 
 /** Load and set editor from proxy file server,
  *  as there were several issues with providing static files via Nuxt.
@@ -64,7 +62,6 @@ function submit(e: any): void {
   handleSubmit(e)
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
-    addToVoiceResponse(assistantResponse)
     addToChatEditor(assistantResponse)
     playResponse(getLastAssistantResponseIndex())
   })
@@ -118,7 +115,6 @@ function submitSelectedCallback(event: Event, prompt: string, selectedText: stri
   }
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
-    addToVoiceResponse(assistantResponse)
     addToChatEditor(assistantResponse)
     playResponse(getLastAssistantResponseIndex())
   })
@@ -137,19 +133,20 @@ watch(messages, (_): void => {
         id: Date.now().toString(),
         role: messages.value[messages.value.length - 1].role,
         content: messages.value[messages.value.length - 1].content,
+        new: true,
       },
       audioPlayer: { player: new speechsdk.SpeakerAudioDestination(), muted: false, alreadyPlayed: false },
     } as ChatMessage)
     start()
   }
-  let message = messages.value[messages.value.length - 1]
-  if (message.role === 'assistant') {
-    chatHistory.messages[chatHistory.messages.length - 1].message.content = message.content
-  }
-  if (message.content.length > 50 && newMessage.value === true) {
-    newMessage.value = false
-    voiceResponse.value = message.content
-    synthesizeSpeech(message.content, -1)
+  let entry = chatHistory.messages[chatHistory.messages.length - 1]
+  if (entry.message.role === 'assistant') {
+    entry.message.content = messages.value[messages.value.length - 1].content
+    if (entry.message.content.length > 25 && entry.message.new === true) {
+      entry.message.new = false
+      voiceResponse.value = entry.message.content
+      synthesizeSpeech(entry.message.content, getLastAssistantResponseIndex())
+    }
   }
 })
 
@@ -214,21 +211,19 @@ async function sttFromMic() {
 
 async function waitForAssistant(): Promise<string> {
   // TODO: This can be improved if we change the server endpoint such that it sends the stream end event
-  let intervalId = setInterval(checkLastAssistantResponse, 7000)
+  let intervalId = setInterval(checkLastAssistantResponse, 8000)
   await waitToClear(intervalId)
   return new Promise((resolve, _) => {
     setTimeout(() => {
       resolve(getLastAssistantResponse())
-    }, 4000)
+    }, 5500)
   })
 }
 
 async function waitToClear(intervalId: NodeJS.Timeout) {
-  newMessage.value = true
   setTimeout(() => {
     clearInterval(intervalId)
   }, 30000)
-  newMessage.value = false
 }
 
 function checkLastAssistantResponse() {
@@ -246,7 +241,7 @@ function checkLastAssistantResponse() {
     addToChatEditor(message.content)
   }
   if (!voiceResponse.value.includes(message.content)) {
-    voiceResponse.value = message.content
+    addToVoiceResponse(message.content)
     synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
     focusPauseButton()
   }
@@ -300,18 +295,16 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
   let newAudioPlayer = {
     player: new speechsdk.SpeakerAudioDestination(),
     muted: false,
-    alreadyPlayed: true,
+    alreadyPlayed: false,
   }
   if (audioPlayerIndex !== -1) {
     let audioPlayer = getAudioPlayer(audioPlayerIndex)
-    audioPlayer.player.pause()
-    currentTime.value = audioPlayer.player.currentTime
-    // TODO Figure out a good way to continue playing the audio from the last currentTime
-    // set currentTime directly on speakerAudioDestination does not work
+    prevAudioPlayer.value = audioPlayer
+    // audioPlayer.player.pause()
     audioPlayer = {
       player: new speechsdk.SpeakerAudioDestination(),
       muted: false,
-      alreadyPlayed: true,
+      alreadyPlayed: false,
     }
     audioPlayer.player.onAudioEnd = audioPlayer => {
       audioPlayer.pause()
@@ -319,12 +312,12 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
       chatHistory.messages[audioPlayerIndex].audioPlayer.alreadyPlayed = true
     }
     audioPlayer.player.onAudioStart = () => {
-      if (currentTime.value !== -1) {
-        audioPlayer.player.internalAudio.currentTime = currentTime.value
+      prevAudioPlayer.value.player.pause()
+      let currentTime = prevAudioPlayer.value.player.currentTime
+      if (currentTime !== -1) {
+        // round to 2 decimal places
+        audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
       }
-
-      console.log(audioPlayer.player.internalAudio)
-      // focusPauseButton()
     }
     newAudioPlayer.player = audioPlayer.player
     chatHistory.messages[audioPlayerIndex].audioPlayer = newAudioPlayer
@@ -366,7 +359,14 @@ async function playResponse(index: number) {
     focusPauseButton()
     return
   }
-  synthesizeSpeech(voiceResponse.value, index)
+  let message = chatHistory.messages[index].message
+  if (!message.new && !voiceResponse.value.includes(message.content)) {
+    // continue the voice synthesis
+    addToVoiceResponse(message.content)
+    synthesizeSpeech(voiceResponse.value, index)
+    focusPauseButton()
+  }
+
   focusPauseButton()
 }
 
@@ -385,7 +385,6 @@ function repeatLastQuestion() {
   handleSubmit(new Event('submit'))
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
-    addToVoiceResponse(assistantResponse)
     addToChatEditor(assistantResponse)
     playResponse(getLastAssistantResponseIndex())
   })
