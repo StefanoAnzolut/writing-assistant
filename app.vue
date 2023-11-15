@@ -157,7 +157,7 @@ watch(messages, (_): void => {
     checkHTMLInResponse(messages.value[messages.value.length - 1].content)
     if (entry.message.content.length > 25 && entry.message.new === true) {
       entry.message.new = false
-      voiceResponse.value = entry.message.content
+      addToVoiceResponse(entry.message.content)
       synthesizeSpeech(entry.message.content, getLastAssistantResponseIndex())
     }
   }
@@ -168,7 +168,7 @@ watch(finishReason, (_): void => {
     clearInterval(intervalId.value)
     finishReason.value = false
     voiceSynthesisOnce.value = false
-    addToVoiceResponse(getLastAssistantResponse())
+    addToVoiceResponse(chatHistory.messages[chatHistory.messages.length - 1].message.content)
     synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
     focusPauseButton()
     return
@@ -178,16 +178,26 @@ watch(finishReason, (_): void => {
 function checkHTMLInResponse(assistantResponse: string) {
   if (
     assistantResponse.includes('```html') ||
-    assistantResponse.includes('[HTML CODE PLACEHOLDER - PASTE BUTTON TO ADD HTML TO TEXT EDITOR]')
+    assistantResponse.includes(
+      '[ HTML code placeholder - use the paste button to add the HTML template to the text editor ] .'
+    )
   ) {
     const expression = /```html([\s\S]*?)```/
     const match = assistantResponse.match(expression)
     if (match && match[1]) {
+      console.log(match[1])
       htmlCode.value = match[1]
     }
     const parts = assistantResponse.split(expression)
-    console.log(parts)
-    const textWithoutHtml = parts.join('[HTML CODE PLACEHOLDER - PASTE BUTTON TO ADD HTML TO TEXT EDITOR].')
+    if (parts.length === 1) {
+      setResponse(assistantResponse)
+    } else {
+      parts[1] = parts[1].replace(
+        match[1],
+        '[ HTML code placeholder - use the paste button to add the HTML template to the text editor ] .'
+      )
+    }
+    const textWithoutHtml = parts.join('')
     setResponse(textWithoutHtml)
   } else {
     setResponse(assistantResponse)
@@ -266,8 +276,11 @@ function addToVoiceResponse(assistantResponse: string) {
 
 function addToChatEditor(index: number) {
   let assistantResponse = chatHistory.messages[index].message.content
-  if (assistantResponse.includes('[HTML CODE PLACEHOLDER - PASTE BUTTON TO ADD HTML TO TEXT EDITOR]')) {
-    console.log(htmlCode.value)
+  if (
+    assistantResponse.includes(
+      '[ HTML code placeholder - use the paste button to add the HTML template to the text editor ] .'
+    )
+  ) {
     editorContent.value = editorContent.value.concat(htmlCode.value)
     return
   }
@@ -368,26 +381,7 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
 }
 
 function setResponse(response: string) {
-  if (response.includes('```html')) {
-    const expression = /```html([\s\S]*?)```/
-    const match = response.match(expression)
-    if (match && match[1]) {
-      console.log(response)
-      console.log(match[1])
-      htmlCode.value = match[1]
-
-      const parts = response.split(expression)
-      console.log(parts)
-
-      chatHistory.messages[chatHistory.messages.length - 1].message.content.replace(
-        match[1],
-        '[HTML CODE PLACEHOLDER - PASTE BUTTON TO ADD HTML TO TEXT EDITOR].'
-      )
-    }
-    // chatHistory.messages[chatHistory.messages.length - 1].message.content = textWithoutHtml
-  } else {
-    chatHistory.messages[chatHistory.messages.length - 1].message.content = response
-  }
+  chatHistory.messages[chatHistory.messages.length - 1].message.content = response
 }
 
 async function playResponse(index: number) {
@@ -437,6 +431,7 @@ function repeatLastQuestion() {
             density="compact"
             :items="['Jenny', 'Andrew', 'Sonia', 'Ryan']"
             v-model="selectedSpeaker"
+            aria-label="Select a speaker"
           ></v-select>
           <v-btn block color="success" class="no-uppercase" @click="sttFromMic"> Start talking to ChatGPT</v-btn>
           <h1 class="card-title">Chat</h1>
