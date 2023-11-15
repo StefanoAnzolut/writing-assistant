@@ -156,15 +156,14 @@ watch(messages, (_): void => {
     } as ChatMessage)
   }
   let entry = chatHistory.messages[chatHistory.messages.length - 1]
-  if (messages.value[messages.value.length - 1].role === 'assistant') {
-    checkHTMLInResponse(`Answer ${messages.value.length} ${messages.value[messages.value.length - 1].content}`)
-    if (entry.message.content.length > 25 && entry.message.new === true) {
-      entry.message.new = false
-      addToVoiceResponse(entry.message.content)
-      synthesizeSpeech(entry.message.content, getLastAssistantResponseIndex())
-    }
-  } else {
+  if (messages.value[messages.value.length - 1].role === 'user') {
     synthesizeSpeech(entry.message.content, getLastUserResponseIndex())
+  }
+  checkHTMLInResponse(`Answer ${messages.value.length} ${messages.value[messages.value.length - 1].content}`)
+  if (entry.message.content.length > 25 && entry.message.new === true) {
+    entry.message.new = false
+    addToVoiceResponse(entry.message.content)
+    synthesizeSpeech(entry.message.content, getLastAssistantResponseIndex())
   }
 })
 watch(finishReason, (_): void => {
@@ -291,23 +290,39 @@ function addToChatEditor(index: number) {
     editorContent.value = editorContent.value.concat(htmlCode.value)
     return
   }
-  editorContent.value = editorContent.value.concat(`<br/> ${assistantResponse}`)
+
+  const matchPrefix = assistantResponse.match(/Answer (\d+) (.*)/)
+  editorContent.value = editorContent.value.concat(`<br/> ${matchPrefix[2]}`)
 }
 
 function getLastAssistantResponse(): string {
+  if (messages.value.length === 0) {
+    return ''
+  }
   let lastAssistantResponseIndex = getLastAssistantResponseIndex()
-  return messages.value[lastAssistantResponseIndex].content
+  let content = messages.value[lastAssistantResponseIndex].content
+  if (content.includes(`Answer ${messages.value.length} ${content}`)) {
+    return content
+  } else {
+    return `Answer ${messages.value.length} ${content}`
+  }
 }
 function getLastAssistantResponseIndex(): number {
+  if (messages.value.length === 0) {
+    throw new Error('Cannot get index when there is no message!')
+  }
   let lastAssistantResponseIndex = messages.value.length - 1
-  while (messages.value[lastAssistantResponseIndex].role !== 'assistant') {
+  while (messages.value[lastAssistantResponseIndex].role !== 'assistant' && lastAssistantResponseIndex > 0) {
     lastAssistantResponseIndex--
   }
   return lastAssistantResponseIndex
 }
 function getLastUserResponseIndex(): number {
+  if (messages.value.length === 0) {
+    throw new Error('Cannot get index when there is no message!')
+  }
   let lastUserResponseIndex = messages.value.length - 1
-  while (messages.value[lastUserResponseIndex].role !== 'user') {
+  while (messages.value[lastUserResponseIndex].role !== 'user' && lastUserResponseIndex > 0) {
     lastUserResponseIndex--
   }
   return lastUserResponseIndex
