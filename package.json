@@ -16,6 +16,7 @@
     "vue-router": "^4.2.5"
   },
   "dependencies": {
+    "@dqbd/tiktoken": "^1.0.7",
     "@mayasabha/ckeditor4-vue3": "^1.0.3",
     "@mdi/font": "^7.3.67",
     "ai": "^2.2.17",

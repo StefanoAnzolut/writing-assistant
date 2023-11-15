@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useChat } from 'ai/vue'
+import { useChat, type Message } from 'ai/vue'
 import SiteHeader from './components/SiteHeader.vue'
 import { getTokenOrRefresh } from './utils/token_util'
 import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
@@ -20,9 +20,14 @@ const { messages, input, handleSubmit } = useChat({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// Maybe useCompletion might be interesting in the future
+
+/** The reference to see whether we have reached the end of a streaming response from ChatGPT */
+const finishReason = ref(false)
 /** Shared editor content between the user and the writing partner */
 const editorContent = ref('')
-
+/** The html code that is retrieved from the ChatGPT response */
+const htmlCode = ref('')
 /** Voice response from ChatGPT */
 const voiceResponse = ref('')
 
@@ -32,8 +37,10 @@ const selectedTextForPrompt = ref('')
 const chatHistory: ChatHistory = reactive({ messages: [] as ChatMessage[] })
 /** Speech-To-Text Recognizer */
 const speechRecognizer = ref({} as speechsdk.SpeechRecognizer)
-/** Current time of last playing audio Player */
+/** Currently playing audio player to snatch currentTime */
 const prevAudioPlayer = ref({} as AudioPlayer)
+/** A global reference to de-allocated the periodic interval check to add new content when response is being streamed */
+const intervalId = ref({} as NodeJS.Timeout)
 
 /** Load and set editor from proxy file server,
  *  as there were several issues with providing static files via Nuxt.
@@ -44,7 +51,7 @@ if (process.client) {
   ckeditor = defineAsyncComponent(() => import('@mayasabha/ckeditor4-vue3').then(module => module.component))
 }
 function onNamespaceLoaded() {
-  CKEDITOR.on('instanceReady', function (ck) {
+  CKEDITOR.on('instanceReady', function (ck: { editor: any }) {
     registerActions(ck.editor, submitSelectedCallback)
     removeFormElementRoles()
   })
@@ -62,28 +69,11 @@ function submit(e: any): void {
   handleSubmit(e)
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
-    addToChatEditor(assistantResponse)
     playResponse(getLastAssistantResponseIndex())
   })
 }
 
-var startTime, endTime
-
-function start() {
-  startTime = new Date()
-}
-
-function end() {
-  endTime = new Date()
-  var timeDiff = endTime - startTime //in ms
-  // strip the ms
-  timeDiff /= 1000
-
-  // get seconds
-  var seconds = Math.round(timeDiff)
-  console.log(seconds + ' seconds')
-}
-
+/** Submission wrapper for the callback action of the context menu */
 function submitSelectedCallback(event: Event, prompt: string, selectedText: string) {
   // const selected = window.getSelection()
   if (prompt === 'STORE') {
@@ -115,9 +105,25 @@ function submitSelectedCallback(event: Event, prompt: string, selectedText: stri
   }
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
-    addToChatEditor(assistantResponse)
     playResponse(getLastAssistantResponseIndex())
   })
+}
+
+/** As we have modified the chat reponse to include the finish_reason to mark the end of the stream. We need to have some pre-processing. */
+function preprocessLastMessage(latestMessage: Message): Message {
+  finishReason.value = isFinished(latestMessage.content)
+  latestMessage.content = latestMessage.content
+    .replaceAll('0:', '')
+    .replaceAll('\\n', '')
+    .replaceAll('\n', '')
+    .replaceAll('"', '')
+    .replace('2:[{\\finish_reason\\:\\stop\\}]', '')
+    .replaceAll('\\n\\t', '')
+  return latestMessage
+}
+
+function isFinished(message: string) {
+  return message.includes('2:[{\\finish_reason\\:\\stop\\}]')
 }
 
 // TODO: Why do I need this when asking a question from the text editor to the assistant
@@ -127,21 +133,24 @@ function submitSelectedCallback(event: Event, prompt: string, selectedText: stri
  * uses the editorContent for the shared state
  */
 watch(messages, (_): void => {
+  let latestMessage = messages.value[messages.value.length - 1]
+  if (latestMessage.role === 'assistant') {
+    latestMessage = preprocessLastMessage(latestMessage)
+  }
   if (chatHistory.messages.length < messages.value.length) {
     chatHistory.messages.push({
       message: {
         id: Date.now().toString(),
         role: messages.value[messages.value.length - 1].role,
-        content: messages.value[messages.value.length - 1].content,
+        content: latestMessage.content,
         new: true,
       },
       audioPlayer: { player: new speechsdk.SpeakerAudioDestination(), muted: false, alreadyPlayed: false },
     } as ChatMessage)
-    start()
   }
   let entry = chatHistory.messages[chatHistory.messages.length - 1]
-  if (entry.message.role === 'assistant') {
-    entry.message.content = messages.value[messages.value.length - 1].content
+  if (messages.value[messages.value.length - 1].role === 'assistant') {
+    checkHTMLInResponse(messages.value[messages.value.length - 1].content)
     if (entry.message.content.length > 25 && entry.message.new === true) {
       entry.message.new = false
       voiceResponse.value = entry.message.content
@@ -149,6 +158,25 @@ watch(messages, (_): void => {
     }
   }
 })
+
+function checkHTMLInResponse(assistantResponse: string) {
+  if (
+    assistantResponse.includes('```html') ||
+    assistantResponse.includes('[HTML CODE PLACEHOLDER - PASTE BUTTON TO ADD HTML TO TEXT EDITOR]')
+  ) {
+    const expression = /```html([\s\S]*?)```/
+    const match = assistantResponse.match(expression)
+    if (match && match[1]) {
+      htmlCode.value = match[1]
+    }
+    const parts = assistantResponse.split(expression)
+    console.log(parts)
+    const textWithoutHtml = parts.join('[HTML CODE PLACEHOLDER - PASTE BUTTON TO ADD HTML TO TEXT EDITOR].')
+    setResponse(textWithoutHtml)
+  } else {
+    setResponse(assistantResponse)
+  }
+}
 
 async function sttFromMic() {
   const tokenObj = await getTokenOrRefresh()
@@ -182,7 +210,6 @@ async function sttFromMic() {
       handleSubmit(eventTemp)
       waitForAssistant().then(assistantResponse => {
         setResponse(assistantResponse)
-        addToChatEditor(assistantResponse)
         playResponse(getLastAssistantResponseIndex())
       })
       speechRecognizer.value.stopContinuousRecognitionAsync()
@@ -211,8 +238,7 @@ async function sttFromMic() {
 
 async function waitForAssistant(): Promise<string> {
   // TODO: This can be improved if we change the server endpoint such that it sends the stream end event
-  let intervalId = setInterval(checkLastAssistantResponse, 8000)
-  await waitToClear(intervalId)
+  intervalId.value = setInterval(checkLastAssistantResponse, 15000)
   return new Promise((resolve, _) => {
     setTimeout(() => {
       resolve(getLastAssistantResponse())
@@ -220,13 +246,12 @@ async function waitForAssistant(): Promise<string> {
   })
 }
 
-async function waitToClear(intervalId: NodeJS.Timeout) {
-  setTimeout(() => {
-    clearInterval(intervalId)
-  }, 30000)
-}
-
 function checkLastAssistantResponse() {
+  if (finishReason.value) {
+    clearInterval(intervalId.value)
+    finishReason.value = false
+    return
+  }
   if (messages.value.length === 0) {
     return
   }
@@ -236,9 +261,6 @@ function checkLastAssistantResponse() {
   }
   if (message.role !== 'assistant') {
     return
-  }
-  if (!editorContent.value.includes(message.content)) {
-    addToChatEditor(message.content)
   }
   if (!voiceResponse.value.includes(message.content)) {
     addToVoiceResponse(message.content)
@@ -251,12 +273,16 @@ function addToVoiceResponse(assistantResponse: string) {
   voiceResponse.value = assistantResponse
 }
 
-function addToChatEditor(assistantResponse: string) {
-  if (editorContent.value.includes('<p>Suggestion:')) {
-    editorContent.value = editorContent.value.replace(/<p>Suggestion:.*/, `<p>Suggestion: ${assistantResponse}`)
-  } else {
-    editorContent.value = editorContent.value.concat(`<p>Suggestion: ${assistantResponse}</p>`)
+function addToChatEditor(index: number) {
+  let assistantResponse = chatHistory.messages[index].message.content
+  console.log('PASTING')
+  console.log(assistantResponse.includes('[HTML CODE PLACEHOLDER - PASTE BUTTON TO ADD HTML TO TEXT EDITOR]'))
+  if (assistantResponse.includes('[HTML CODE PLACEHOLDER - PASTE BUTTON TO ADD HTML TO TEXT EDITOR]')) {
+    console.log(htmlCode.value)
+    editorContent.value = editorContent.value.concat(htmlCode.value)
+    return
   }
+  editorContent.value = editorContent.value.concat(`<br/> ${assistantResponse}`)
 }
 
 function getLastAssistantResponse(): string {
@@ -283,7 +309,6 @@ function getAudioPlayer(index: number): AudioPlayer {
 }
 
 async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
-  console.log('starting to synthesize')
   if (textToSpeak === '') {
     return
   }
@@ -312,11 +337,11 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
       chatHistory.messages[audioPlayerIndex].audioPlayer.alreadyPlayed = true
     }
     audioPlayer.player.onAudioStart = () => {
-      prevAudioPlayer.value.player.pause()
       let currentTime = prevAudioPlayer.value.player.currentTime
       if (currentTime !== -1) {
         // round to 2 decimal places
         audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
+        prevAudioPlayer.value.player.pause()
       }
     }
     newAudioPlayer.player = audioPlayer.player
@@ -333,7 +358,6 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
       let text
       if (result.reason === speechsdk.ResultReason.SynthesizingAudioCompleted) {
         text = `synthesis finished for "${textToSpeak}".\n`
-        end()
         // focusPauseButton()
       } else if (result.reason === speechsdk.ResultReason.Canceled) {
         text = `synthesis failed. Error detail: ${result.errorDetails}.\n`
@@ -349,7 +373,26 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
 }
 
 function setResponse(response: string) {
-  chatHistory.messages[chatHistory.messages.length - 1].message.content = response
+  if (response.includes('```html')) {
+    const expression = /```html([\s\S]*?)```/
+    const match = response.match(expression)
+    if (match && match[1]) {
+      console.log(response)
+      console.log(match[1])
+      htmlCode.value = match[1]
+
+      const parts = response.split(expression)
+      console.log(parts)
+
+      chatHistory.messages[chatHistory.messages.length - 1].message.content.replace(
+        match[1],
+        '[HTML CODE PLACEHOLDER - PASTE BUTTON TO ADD HTML TO TEXT EDITOR].'
+      )
+    }
+    // chatHistory.messages[chatHistory.messages.length - 1].message.content = textWithoutHtml
+  } else {
+    chatHistory.messages[chatHistory.messages.length - 1].message.content = response
+  }
 }
 
 async function playResponse(index: number) {
@@ -385,7 +428,6 @@ function repeatLastQuestion() {
   handleSubmit(new Event('submit'))
   waitForAssistant().then(assistantResponse => {
     setResponse(assistantResponse)
-    addToChatEditor(assistantResponse)
     playResponse(getLastAssistantResponseIndex())
   })
 }
@@ -402,10 +444,22 @@ function repeatLastQuestion() {
           <div class="card-text">
             <div class="chat">
               <div v-for="(entry, i) in chatHistory.messages" :index="i" key="m.id" class="chat-message" tabindex="-1">
+                <v-container class="align-center d-flex" v-if="entry.message.role === 'assistant'">
+                  <v-btn
+                    :id="'addToChatEditor' + i"
+                    icon="mdi-content-paste"
+                    class="chat-button"
+                    color="primary"
+                    @click="addToChatEditor(i)"
+                    aria-label="Add to chat editor"
+                    size="small"
+                  >
+                  </v-btn>
+                </v-container>
                 <h3>
                   {{ entry.message.content }}
                 </h3>
-                <div v-if="entry.message.role === 'assistant'">
+                <v-container class="d-flex align-center" v-if="entry.message.role === 'assistant'">
                   <v-btn
                     :id="'playPauseButton' + i"
                     :icon="entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
@@ -425,7 +479,7 @@ function repeatLastQuestion() {
                     size="small"
                     aria-label="Stop"
                   ></v-btn>
-                </div>
+                </v-container>
               </div>
               <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion"> Repeat last question</v-btn>
               <form @submit="submit">

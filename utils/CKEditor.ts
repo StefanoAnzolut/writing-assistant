@@ -1,4 +1,4 @@
-const actions = [
+export const actions = [
   {
     name: 'summarize',
     label: 'Summarize',
@@ -7,9 +7,9 @@ const actions = [
   },
   {
     name: 'checkSpelling',
-    label: 'Check spelling',
+    label: 'Spell check',
     prompt:
-      'Check spelling for the following content and make it such that the response can immediately be added to a text editor: ',
+      'Spell check the following content and make it such that the response can immediately be added to a text editor: ',
   },
   {
     name: 'define',
