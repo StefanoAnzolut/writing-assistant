@@ -22,19 +22,21 @@ const { messages, input, handleSubmit } = useChat({
 
 // Maybe useCompletion might be interesting in the future
 
-/** The reference to see whether we have reached the end of a streaming response from ChatGPT */
-const finishReason = ref(false)
-/** Shared editor content between the user and the writing partner */
-const editorContent = ref('')
-/** The html code that is retrieved from the ChatGPT response */
-const htmlCode = ref('')
-/** Voice response from ChatGPT */
-const voiceResponse = ref('')
-
-/** A temporary store for the selected text from the text editor for custom questions */
-const selectedTextForPrompt = ref('')
 /** Session chat history between the user and the writing partner */
 const chatHistory: ChatHistory = reactive({ messages: [] as ChatMessage[] })
+
+/** Shared editor content between the user and the writing partner */
+const editorContent = ref('')
+/** A temporary store for the selected text from the text editor for custom questions */
+const selectedTextForPrompt = ref('')
+/** The html code that is retrieved from the ChatGPT response */
+const htmlCode = ref('')
+
+/** Voice response from ChatGPT */
+const voiceResponse = ref('')
+/** The reference to see whether we have reached the end of a streaming response from ChatGPT */
+const finishReason = ref(false)
+const voiceSynthesisOnce = ref(false)
 /** The selected speaker */
 const selectedSpeaker = ref('Jenny')
 /** Speech-To-Text Recognizer */
@@ -125,7 +127,7 @@ function preprocessLastMessage(latestMessage: Message): Message {
 }
 
 function isFinished(message: string) {
-  return message.includes('2:[{\\finish_reason\\:\\stop\\}]')
+  return message.includes('2:"[{\\"finish_reason\\":\\"stop\\"}]"')
 }
 
 // TODO: Why do I need this when asking a question from the text editor to the assistant
@@ -158,6 +160,18 @@ watch(messages, (_): void => {
       voiceResponse.value = entry.message.content
       synthesizeSpeech(entry.message.content, getLastAssistantResponseIndex())
     }
+  }
+})
+watch(finishReason, (_): void => {
+  if (finishReason.value) {
+    // final run to finish the voice synthesis
+    clearInterval(intervalId.value)
+    finishReason.value = false
+    voiceSynthesisOnce.value = false
+    addToVoiceResponse(getLastAssistantResponse())
+    synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
+    focusPauseButton()
+    return
   }
 })
 
@@ -239,36 +253,11 @@ async function sttFromMic() {
 }
 
 async function waitForAssistant(): Promise<string> {
-  // TODO: This can be improved if we change the server endpoint such that it sends the stream end event
-  intervalId.value = setInterval(checkLastAssistantResponse, 15000)
   return new Promise((resolve, _) => {
     setTimeout(() => {
       resolve(getLastAssistantResponse())
     }, 5500)
   })
-}
-
-function checkLastAssistantResponse() {
-  if (finishReason.value) {
-    clearInterval(intervalId.value)
-    finishReason.value = false
-    return
-  }
-  if (messages.value.length === 0) {
-    return
-  }
-  let message = messages.value[messages.value.length - 1]
-  if (!message?.role) {
-    return
-  }
-  if (message.role !== 'assistant') {
-    return
-  }
-  if (!voiceResponse.value.includes(message.content)) {
-    addToVoiceResponse(message.content)
-    synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
-    focusPauseButton()
-  }
 }
 
 function addToVoiceResponse(assistantResponse: string) {
@@ -402,20 +391,15 @@ function setResponse(response: string) {
 }
 
 async function playResponse(index: number) {
-  // let audioPlayer = getAudioPlayer(index)
-  // if (audioPlayer.alreadyPlayed) {
-  //   replayAudio(audioPlayer)
-  //   focusPauseButton()
-  //   return
-  // }
   let message = chatHistory.messages[index].message
   if (!message.new && !voiceResponse.value.includes(message.content)) {
-    // continue the voice synthesis
     addToVoiceResponse(message.content)
-    synthesizeSpeech(voiceResponse.value, index)
-    focusPauseButton()
+    // continue the voice synthesis only once, after that wait until end or response
+    if (!voiceSynthesisOnce.value) {
+      synthesizeSpeech(voiceResponse.value, index)
+      voiceSynthesisOnce.value = true
+    }
   }
-
   focusPauseButton()
 }
 
