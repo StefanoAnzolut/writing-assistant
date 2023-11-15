@@ -35,6 +35,8 @@ const voiceResponse = ref('')
 const selectedTextForPrompt = ref('')
 /** Session chat history between the user and the writing partner */
 const chatHistory: ChatHistory = reactive({ messages: [] as ChatMessage[] })
+/** The selected speaker */
+const selectedSpeaker = ref('Jenny')
 /** Speech-To-Text Recognizer */
 const speechRecognizer = ref({} as speechsdk.SpeechRecognizer)
 /** Currently playing audio player to snatch currentTime */
@@ -275,8 +277,6 @@ function addToVoiceResponse(assistantResponse: string) {
 
 function addToChatEditor(index: number) {
   let assistantResponse = chatHistory.messages[index].message.content
-  console.log('PASTING')
-  console.log(assistantResponse.includes('[HTML CODE PLACEHOLDER - PASTE BUTTON TO ADD HTML TO TEXT EDITOR]'))
   if (assistantResponse.includes('[HTML CODE PLACEHOLDER - PASTE BUTTON TO ADD HTML TO TEXT EDITOR]')) {
     console.log(htmlCode.value)
     editorContent.value = editorContent.value.concat(htmlCode.value)
@@ -314,9 +314,14 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
   }
   const tokenObj = await getTokenOrRefresh()
   const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
-  speechConfig.speechSynthesisLanguage = 'en-US'
   /** Leni & Jan für CH. Alle weiteren findet man hier: https://speech.microsoft.com/portal/voicegallery */
-  speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural'
+  if (selectedSpeaker.value === 'Jenny' || selectedSpeaker.value === 'Andrew') {
+    speechConfig.speechSynthesisLanguage = 'en-US'
+    speechConfig.speechSynthesisVoiceName = `en-US-${selectedSpeaker.value}Neural`
+  } else {
+    speechConfig.speechSynthesisLanguage = 'en-GB'
+    speechConfig.speechSynthesisVoiceName = `en-GB-${selectedSpeaker.value}Neural`
+  }
   let newAudioPlayer = {
     player: new speechsdk.SpeakerAudioDestination(),
     muted: false,
@@ -348,6 +353,7 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
     chatHistory.messages[audioPlayerIndex].audioPlayer = newAudioPlayer
   }
 
+  console.log('synthesizing text')
   const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(newAudioPlayer.player)
   let synthesizer = new speechsdk.SpeechSynthesizer(speechConfig, audioConfig)
   // Events are raised as the output audio data becomes available, which is faster than playback to an output device.
@@ -396,12 +402,12 @@ function setResponse(response: string) {
 }
 
 async function playResponse(index: number) {
-  let audioPlayer = getAudioPlayer(index)
-  if (audioPlayer.alreadyPlayed) {
-    replayAudio(audioPlayer)
-    focusPauseButton()
-    return
-  }
+  // let audioPlayer = getAudioPlayer(index)
+  // if (audioPlayer.alreadyPlayed) {
+  //   replayAudio(audioPlayer)
+  //   focusPauseButton()
+  //   return
+  // }
   let message = chatHistory.messages[index].message
   if (!message.new && !voiceResponse.value.includes(message.content)) {
     // continue the voice synthesis
@@ -423,6 +429,9 @@ async function focusPauseButton() {
 }
 
 function repeatLastQuestion() {
+  if (messages.value.length === 0) {
+    return
+  }
   let lastUserReponseIndex = getLastUserResponseIndex()
   input.value = messages.value[lastUserReponseIndex].content
   handleSubmit(new Event('submit'))
@@ -439,16 +448,22 @@ function repeatLastQuestion() {
     <v-row>
       <v-col cols="4">
         <div class="card">
-          <v-btn color="success" class="ma-4 no-uppercase" @click="sttFromMic"> Start talking to ChatGPT</v-btn>
+          <v-select
+            label="Select a speaker"
+            density="compact"
+            :items="['Jenny', 'Andrew', 'Sonia', 'Ryan']"
+            v-model="selectedSpeaker"
+          ></v-select>
+          <v-btn block color="success" class="no-uppercase" @click="sttFromMic"> Start talking to ChatGPT</v-btn>
           <h1 class="card-title">Chat</h1>
           <div class="card-text">
             <div class="chat">
               <div v-for="(entry, i) in chatHistory.messages" :index="i" key="m.id" class="chat-message" tabindex="-1">
-                <v-container class="align-center d-flex" v-if="entry.message.role === 'assistant'">
+                <v-container class="d-flex flex-row-reverse" v-if="entry.message.role === 'assistant'">
                   <v-btn
                     :id="'addToChatEditor' + i"
                     icon="mdi-content-paste"
-                    class="chat-button"
+                    class="ma-1"
                     color="primary"
                     @click="addToChatEditor(i)"
                     aria-label="Add to chat editor"
@@ -459,26 +474,26 @@ function repeatLastQuestion() {
                 <h3>
                   {{ entry.message.content }}
                 </h3>
-                <v-container class="d-flex align-center" v-if="entry.message.role === 'assistant'">
+                <v-container class="d-flex flex-row-reverse" v-if="entry.message.role === 'assistant'">
+                  <v-btn
+                    :id="'stopButton' + i"
+                    icon="mdi-stop"
+                    class="ma-1"
+                    color="error"
+                    @click="stop(entry.audioPlayer)"
+                    size="small"
+                    aria-label="Stop"
+                  ></v-btn>
                   <v-btn
                     :id="'playPauseButton' + i"
                     :icon="entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
-                    class="chat-button"
+                    class="ma-1"
                     color="primary"
                     @click="pause(entry.audioPlayer)"
                     :aria-label="entry.audioPlayer.muted ? 'Play' : 'Pause'"
                     size="small"
                   >
                   </v-btn>
-                  <v-btn
-                    :id="'stopButton' + i"
-                    icon="mdi-stop"
-                    class="chat-button"
-                    color="error"
-                    @click="stop(entry.audioPlayer)"
-                    size="small"
-                    aria-label="Stop"
-                  ></v-btn>
                 </v-container>
               </div>
               <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion"> Repeat last question</v-btn>
@@ -579,10 +594,5 @@ function repeatLastQuestion() {
 }
 .no-uppercase {
   text-transform: unset !important;
-}
-.chat-button {
-  display: block;
-  margin-left: auto;
-  margin-right: 0;
 }
 </style>
