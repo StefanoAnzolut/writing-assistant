@@ -9,7 +9,7 @@ import type { ChatHistory } from './models/ChatHistory'
 import { removeFormElementRoles } from './utils/CKEditor'
 import type { AudioPlayer } from './models/AudioPlayer'
 import type { ChatMessage } from './models/ChatMessage'
-import { pause, stop, replayAudio } from './composables/audio-player'
+import { pause } from './composables/audio-player'
 
 useHead({
   title: 'Writing Partner',
@@ -146,7 +146,10 @@ watch(messages, (_): void => {
       message: {
         id: Date.now().toString(),
         role: messages.value[messages.value.length - 1].role,
-        content: latestMessage.content,
+        content:
+          messages.value[messages.value.length - 1].role === 'user'
+            ? `Prompt ${messages.value.length} ${latestMessage.content}`
+            : `Answer ${messages.value.length} ${latestMessage.content}`,
         new: true,
       },
       audioPlayer: { player: new speechsdk.SpeakerAudioDestination(), muted: false, alreadyPlayed: false },
@@ -154,12 +157,14 @@ watch(messages, (_): void => {
   }
   let entry = chatHistory.messages[chatHistory.messages.length - 1]
   if (messages.value[messages.value.length - 1].role === 'assistant') {
-    checkHTMLInResponse(messages.value[messages.value.length - 1].content)
+    checkHTMLInResponse(`Answer ${messages.value.length} ${messages.value[messages.value.length - 1].content}`)
     if (entry.message.content.length > 25 && entry.message.new === true) {
       entry.message.new = false
       addToVoiceResponse(entry.message.content)
       synthesizeSpeech(entry.message.content, getLastAssistantResponseIndex())
     }
+  } else {
+    synthesizeSpeech(entry.message.content, getLastUserResponseIndex())
   }
 })
 watch(finishReason, (_): void => {
@@ -168,10 +173,13 @@ watch(finishReason, (_): void => {
     clearInterval(intervalId.value)
     finishReason.value = false
     voiceSynthesisOnce.value = false
-    addToVoiceResponse(chatHistory.messages[chatHistory.messages.length - 1].message.content)
-    synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
-    focusPauseButton()
-    return
+    let message = chatHistory.messages[chatHistory.messages.length - 1].message
+    if (!voiceResponse.value.includes(message.content)) {
+      addToVoiceResponse(chatHistory.messages[chatHistory.messages.length - 1].message.content)
+      synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
+      focusPauseButton()
+      return
+    }
   }
 })
 
@@ -185,7 +193,6 @@ function checkHTMLInResponse(assistantResponse: string) {
     const expression = /```html([\s\S]*?)```/
     const match = assistantResponse.match(expression)
     if (match && match[1]) {
-      console.log(match[1])
       htmlCode.value = match[1]
     }
     const parts = assistantResponse.split(expression)
@@ -365,6 +372,9 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
     result => {
       let text
       if (result.reason === speechsdk.ResultReason.SynthesizingAudioCompleted) {
+        if (chatHistory.messages[audioPlayerIndex].message.role === 'user') {
+          chatHistory.messages[audioPlayerIndex].audioPlayer.player.pause()
+        }
         text = `synthesis finished for "${textToSpeak}".\n`
         // focusPauseButton()
       } else if (result.reason === speechsdk.ResultReason.Canceled) {
@@ -390,6 +400,7 @@ async function playResponse(index: number) {
     addToVoiceResponse(message.content)
     // continue the voice synthesis only once, after that wait until end or response
     if (!voiceSynthesisOnce.value) {
+      console.log('playedOnce response')
       synthesizeSpeech(voiceResponse.value, index)
       voiceSynthesisOnce.value = true
     }
@@ -421,7 +432,6 @@ function repeatLastQuestion() {
 </script>
 
 <template>
-  <SiteHeader />
   <v-container>
     <v-row>
       <v-col cols="4">
@@ -433,12 +443,38 @@ function repeatLastQuestion() {
             v-model="selectedSpeaker"
             aria-label="Select a speaker"
           ></v-select>
-          <v-btn block color="success" class="no-uppercase" @click="sttFromMic"> Start talking to ChatGPT</v-btn>
+
           <h1 class="card-title">Chat</h1>
           <div class="card-text">
             <div class="chat">
+              <form @submit="submit" class="d-flex input pb-2">
+                <v-btn
+                  icon="mdi-microphone"
+                  color="success"
+                  class="no-uppercase mt-3 ml-1"
+                  @click="sttFromMic"
+                  aria-label="Start talking to ChatGPT"
+                ></v-btn>
+                <div class="flex-grow-1 mx-2">
+                  <input
+                    id="chat-input"
+                    class="chat-input"
+                    autocomplete="off"
+                    v-model="input"
+                    placeholder="Send a message"
+                    aria-label="Enter your prompt to ChatGPT"
+                  />
+                </div>
+              </form>
               <div v-for="(entry, i) in chatHistory.messages" :index="i" key="m.id" class="chat-message" tabindex="-1">
-                <v-container class="d-flex flex-row-reverse" v-if="entry.message.role === 'assistant'">
+                <h2 v-if="entry.message.role === 'user'">
+                  {{ entry.message.content.substring(0, 20) }}
+                </h2>
+                <p class="h2-style" v-if="entry.message.role === 'user'">{{ entry.message.content.substring(20) }}</p>
+                <h3 v-if="entry.message.role === 'assistant'">
+                  {{ entry.message.content }}
+                </h3>
+                <v-container class="d-flex flex-row-reverse">
                   <v-btn
                     :id="'addToChatEditor' + i"
                     icon="mdi-content-paste"
@@ -447,22 +483,9 @@ function repeatLastQuestion() {
                     @click="addToChatEditor(i)"
                     aria-label="Add to chat editor"
                     size="small"
+                    v-if="entry.message.role === 'assistant'"
                   >
                   </v-btn>
-                </v-container>
-                <h3>
-                  {{ entry.message.content }}
-                </h3>
-                <v-container class="d-flex flex-row-reverse" v-if="entry.message.role === 'assistant'">
-                  <v-btn
-                    :id="'stopButton' + i"
-                    icon="mdi-stop"
-                    class="ma-1"
-                    color="error"
-                    @click="stop(entry.audioPlayer)"
-                    size="small"
-                    aria-label="Stop"
-                  ></v-btn>
                   <v-btn
                     :id="'playPauseButton' + i"
                     :icon="entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
@@ -476,18 +499,6 @@ function repeatLastQuestion() {
                 </v-container>
               </div>
               <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion"> Repeat last question</v-btn>
-              <form @submit="submit">
-                <div>
-                  <input
-                    id="chat-input"
-                    class="chat-input"
-                    autocomplete="off"
-                    v-model="input"
-                    placeholder="Send a message"
-                    aria-label="Enter your prompt to ChatGPT"
-                  />
-                </div>
-              </form>
             </div>
           </div>
         </div>
@@ -514,6 +525,17 @@ function repeatLastQuestion() {
 </template>
 
 <style scoped>
+.input {
+  border-bottom: #ccced1 1px solid;
+}
+.h2-style {
+  font-size: 1.5em;
+  margin-block-start: 0.83em;
+  margin-block-end: 0.83em;
+  margin-inline-start: 0px;
+  margin-inline-end: 0px;
+  font-weight: bold;
+}
 .card-title {
   display: block;
   font-size: 1.5em;
