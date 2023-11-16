@@ -220,7 +220,7 @@ async function sttFromMic() {
   window.setTimeout(() => {
     const synth = new Tone.Synth().toDestination()
     synth.triggerAttackRelease('C4', '8n')
-  }, 2000)
+  }, 400)
 
   speechRecognizer.value.recognizing = (_, e) => {
     console.log(`RECOGNIZING: Text=${e.result.text}`)
@@ -263,6 +263,9 @@ async function sttFromMic() {
   speechRecognizer.value.sessionStopped = (s, e) => {
     console.log('\n    Session stopped event.')
     speechRecognizer.value.stopContinuousRecognitionAsync()
+  }
+  speechRecognizer.value.sessionStarted = (s, e) => {
+    console.log('\n    Session started event.')
   }
 }
 
