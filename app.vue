@@ -155,6 +155,7 @@ watch(messages, (_): void => {
   let entry = chatHistory.messages[chatHistory.messages.length - 1]
   if (messages.value[messages.value.length - 1].role === 'user') {
     synthesizeSpeech(entry.message.content, getLastUserResponseIndex())
+    return
   }
   checkHTMLInResponse(addPrefix(messages, latestMessage))
   if (entry.message.content.length > 25 && entry.message.new === true) {
