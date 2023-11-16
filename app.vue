@@ -149,7 +149,7 @@ watch(messages, (_): void => {
         content: addPrefix(messages, latestMessage),
         new: true,
       },
-      audioPlayer: { player: new speechsdk.SpeakerAudioDestination(), muted: false, alreadyPlayed: false },
+      audioPlayer: { player: new speechsdk.SpeakerAudioDestination(), muted: true, alreadyPlayed: false },
     } as ChatMessage)
   }
   let entry = chatHistory.messages[chatHistory.messages.length - 1]
@@ -361,7 +361,7 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
   }
   let newAudioPlayer = {
     player: new speechsdk.SpeakerAudioDestination(),
-    muted: false,
+    muted: true,
     alreadyPlayed: false,
   }
   if (audioPlayerIndex !== -1) {
@@ -370,7 +370,7 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
     // audioPlayer.player.pause()
     audioPlayer = {
       player: new speechsdk.SpeakerAudioDestination(),
-      muted: false,
+      muted: true,
       alreadyPlayed: false,
     }
     audioPlayer.player.onAudioEnd = audioPlayer => {
@@ -385,6 +385,8 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
         // round to 2 decimal places
         audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
       }
+      chatHistory.messages[audioPlayerIndex].audioPlayer.muted = false
+      focusPauseButton()
     }
     newAudioPlayer.player = audioPlayer.player
     chatHistory.messages[audioPlayerIndex].audioPlayer = newAudioPlayer
@@ -402,6 +404,7 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
       if (result.reason === speechsdk.ResultReason.SynthesizingAudioCompleted) {
         if (chatHistory.messages[audioPlayerIndex].message.role === 'user') {
           chatHistory.messages[audioPlayerIndex].audioPlayer.player.pause()
+          chatHistory.messages[audioPlayerIndex].audioPlayer.muted = true
         }
         text = `synthesis finished for "${textToSpeak}".\n`
         // focusPauseButton()
@@ -464,14 +467,13 @@ function repeatLastQuestion() {
     <v-row>
       <v-col cols="4">
         <div class="card">
-          <v-select
+          <!-- <v-select
             label="Select a speaker"
             density="compact"
             :items="['Jenny', 'Andrew', 'Sonia', 'Ryan']"
             v-model="selectedSpeaker"
             aria-label="Select a speaker"
-          ></v-select>
-
+          ></v-select> -->
           <h1 class="card-title">Chat</h1>
           <div class="card-text">
             <div class="chat">
@@ -526,7 +528,7 @@ function repeatLastQuestion() {
                   </v-btn>
                 </v-container>
               </div>
-              <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion"> Repeat last question</v-btn>
+              <!-- <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion"> Repeat last question</v-btn> -->
             </div>
           </div>
         </div>
@@ -561,7 +563,7 @@ function repeatLastQuestion() {
 }
 .h3-style {
   font-size: 1.17em;
-  margin-block-start: -3em;
+  margin-block-start: -0.83em;
   margin-inline-start: 0px;
   margin-inline-end: 0px;
   font-weight: bold;
