@@ -43,6 +43,35 @@ function checkContextLengthAndUpdateSlidingWindow(messages) {
   return finalMessages.reverse()
 }
 
+async function checkStructureRequest(message: string) {
+  // Check if the message is asking for a structure or a template
+  /** Provide me a structure for a paper
+Write me a template for a conference
+How does a scientific work for a qualitative study look like? */
+  let systemPrompt =
+    'You are an agent that preprocesses messages and identifies whether the request is asking for any structure or any templates. If the USER REQUEST asks for a structure or any kind of template or outline of a scientific work document you reply with true otherwise reply with false and the reason why it is not a request for structure in three sentences at most.\n'
+  const response = await openai.chat.completions.create({
+    model: 'gpt-3.5-turbo',
+    messages: [
+      {
+        content: systemPrompt,
+        role: 'system',
+      },
+      {
+        content: message.content,
+        role: 'user',
+      },
+    ],
+  })
+  let assistantResponse = response['choices'][0]['message']['content']
+  console.log('Structure request?', assistantResponse)
+  if (assistantResponse?.toLowerCase().includes('true')) {
+    return true
+  } else {
+    return false
+  }
+}
+
 export default defineLazyEventHandler(async () => {
   if (!apiKey) throw new Error('Missing OpenAI API key')
   return defineEventHandler(async event => {
@@ -52,7 +81,17 @@ export default defineLazyEventHandler(async () => {
     console.log(messages)
 
     let finalMessages = checkContextLengthAndUpdateSlidingWindow(messages)
+    let lastMessage = finalMessages[finalMessages.length - 1]
+    let isStructureRequest = await checkStructureRequest(lastMessage)
 
+    if (isStructureRequest === true) {
+      finalMessages[finalMessages.length - 1].content = lastMessage.content.concat(
+        "\n Please provide valid HTML tags for the structure of the document. If you don't know how try anyway."
+      )
+    }
+
+    console.log('The following messages are being sent:\n')
+    console.log(finalMessages)
     // Ask OpenAI for a streaming chat completion given the prompt
     // construct our request to the Azure OpenAI API with fetch
     const response = await openai.chat.completions.create({
