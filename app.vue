@@ -117,7 +117,6 @@ function submitSelectedCallback(event: Event, prompt: string, selectedText: stri
 function preprocessLastMessage(latestMessage: Message): Message {
   responseFinished.value = isFinished(latestMessage.content)
   latestMessage.content = latestMessage.content.replace('2:"[{\\"done\\":true}]"', '')
-  console.log(latestMessage.content)
   return latestMessage
 }
 
@@ -380,11 +379,11 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
       chatHistory.messages[audioPlayerIndex].audioPlayer.alreadyPlayed = true
     }
     audioPlayer.player.onAudioStart = () => {
+      prevAudioPlayer.value.player.pause()
       let currentTime = prevAudioPlayer.value.player.currentTime
       if (currentTime !== -1) {
         // round to 2 decimal places
         audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
-        prevAudioPlayer.value.player.pause()
       }
     }
     newAudioPlayer.player = audioPlayer.player
@@ -496,10 +495,10 @@ function repeatLastQuestion() {
                 </div>
               </form>
               <div v-for="(entry, i) in chatHistory.messages" :index="i" key="m.id" class="chat-message" tabindex="-1">
-                <h2 v-if="entry.message.role === 'user'">
-                  {{ entry.message.content.substring(0, 20) }}
+                <h2 class="hide-prompt-heading" v-if="entry.message.role === 'user'">
+                  {{ entry.message.content.substring(0, 30) }}
                 </h2>
-                <p class="h2-style" v-if="entry.message.role === 'user'">{{ entry.message.content.substring(20) }}</p>
+                <p class="h3-style" v-if="entry.message.role === 'user'">{{ entry.message.content }}</p>
                 <h3 v-if="entry.message.role === 'assistant'">
                   {{ entry.message.content }}
                 </h3>
@@ -554,13 +553,15 @@ function repeatLastQuestion() {
 </template>
 
 <style scoped>
+.hide-prompt-heading {
+  visibility: hidden;
+}
 .input {
   border-bottom: #ccced1 1px solid;
 }
-.h2-style {
-  font-size: 1.5em;
-  margin-block-start: 0.83em;
-  margin-block-end: 0.83em;
+.h3-style {
+  font-size: 1.17em;
+  margin-block-start: -3em;
   margin-inline-start: 0px;
   margin-inline-end: 0px;
   font-weight: bold;
