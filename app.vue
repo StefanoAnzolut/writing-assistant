@@ -481,7 +481,7 @@ function repeatLastQuestion() {
               <form @submit="submit" class="d-flex input pb-2">
                 <v-btn
                   icon="mdi-microphone"
-                  color="success"
+                  color="primary"
                   class="no-uppercase mt-3 ml-1"
                   @click="sttFromMic"
                   aria-label="Start talking to ChatGPT"
@@ -497,20 +497,29 @@ function repeatLastQuestion() {
                   />
                 </div>
               </form>
-              <div v-for="(entry, i) in chatHistory.messages" :index="i" key="m.id" class="chat-message" tabindex="-1">
-                <h2 class="hide-prompt-heading" v-if="entry.message.role === 'user'">
-                  {{ entry.message.content.substring(0, 30) }}
-                </h2>
-                <p class="h3-style" v-if="entry.message.role === 'user'">{{ entry.message.content }}</p>
-                <h3 v-if="entry.message.role === 'assistant'">
-                  {{ entry.message.content }}
-                </h3>
+              <div
+                v-for="(entry, i) in chatHistory.messages"
+                :index="i"
+                key="m.id"
+                class="chat-message"
+                :class="chatHistory.messages[i].message.role === 'user' ? 'user-message' : 'assistant-message'"
+                tabindex="-1"
+              >
+                <div class="chat-inner">
+                  <h2 class="hide-prompt-heading" v-if="entry.message.role === 'user'">
+                    {{ entry.message.content.substring(0, 30) }}
+                  </h2>
+                  <p class="h3-style" v-if="entry.message.role === 'user'">{{ entry.message.content }}</p>
+                  <h3 v-if="entry.message.role === 'assistant'">
+                    {{ entry.message.content }}
+                  </h3>
+                </div>
                 <v-container class="d-flex flex-row justify-end">
                   <v-btn
                     :id="'playPauseButton' + i"
                     :icon="entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
                     class="ma-1"
-                    color="primary"
+                    color="success"
                     @click="pause(entry.audioPlayer)"
                     :aria-label="entry.audioPlayer.muted ? 'Play' : 'Pause'"
                     size="small"
@@ -559,9 +568,6 @@ function repeatLastQuestion() {
 .hide-prompt-heading {
   visibility: hidden;
 }
-.input {
-  border-bottom: #ccced1 1px solid;
-}
 .h3-style {
   font-size: 1.17em;
   margin-block-start: -0.83em;
@@ -591,24 +597,31 @@ function repeatLastQuestion() {
 }
 .chat-message {
   white-space: pre-wrap;
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
-  border-bottom: #ccced1 1px solid;
+  border-top: #ccced1 1px solid;
   display: block;
-  margin-block-start: 1em;
-  margin-block-end: 1em;
+  margin-block-end: 0.5em;
   margin-inline-start: 0px;
   margin-inline-end: 0px;
   font-size: smaller;
 }
-.chat-input {
-  bottom: 0;
+.chat-inner {
   padding: 0.5rem;
-  padding-top: 2rem;
+}
+
+.user-message {
+  background-color: #ffe79f;
+}
+.assistant-message {
+  background-color: #cf9fff;
+}
+.chat-input {
+  padding: 0.5rem;
+  margin-top: 0.75rem;
   border-radius: 0.25rem;
   border-width: 1px;
   border-color: #d1d5db;
   width: 100%;
+  height: 48px;
   max-width: 28rem;
   box-shadow:
     0 20px 25px -5px rgba(0, 0, 0, 0.1),
