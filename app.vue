@@ -35,7 +35,7 @@ const htmlCode = ref('')
 /** Voice response from ChatGPT */
 const voiceResponse = ref('')
 /** The reference to see whether we have reached the end of a streaming response from ChatGPT */
-const finishReason = ref(false)
+const responseFinished = ref(false)
 const voiceSynthesisOnce = ref(false)
 /** The selected speaker */
 const selectedSpeaker = ref('Jenny')
@@ -115,19 +115,20 @@ function submitSelectedCallback(event: Event, prompt: string, selectedText: stri
 
 /** As we have modified the chat reponse to include the finish_reason to mark the end of the stream. We need to have some pre-processing. */
 function preprocessLastMessage(latestMessage: Message): Message {
-  finishReason.value = isFinished(latestMessage.content)
-  latestMessage.content = latestMessage.content
-    .replaceAll('0:', '')
-    .replaceAll('\\n', '')
-    .replaceAll('\n', '')
-    .replaceAll('"', '')
-    .replace('2:[{\\finish_reason\\:\\stop\\}]', '')
-    .replaceAll('\\n\\t', '')
+  responseFinished.value = isFinished(latestMessage.content)
+  latestMessage.content = latestMessage.content.replace('2:"[{\\"done\\":true}]"', '')
+  console.log(latestMessage.content)
   return latestMessage
 }
 
 function isFinished(message: string) {
-  return message.includes('2:"[{\\"finish_reason\\":\\"stop\\"}]"')
+  return message.includes('2:"[{\\"done\\":true}]"')
+}
+
+function addPrefix(messages, latestMessage) {
+  return messages.value[messages.value.length - 1].role === 'user'
+    ? `Prompt ${messages.value.length} ${latestMessage.content}`
+    : `Answer ${messages.value.length} ${latestMessage.content}`
 }
 
 // TODO: Why do I need this when asking a question from the text editor to the assistant
@@ -146,10 +147,7 @@ watch(messages, (_): void => {
       message: {
         id: Date.now().toString(),
         role: messages.value[messages.value.length - 1].role,
-        content:
-          messages.value[messages.value.length - 1].role === 'user'
-            ? `Prompt ${messages.value.length} ${latestMessage.content}`
-            : `Answer ${messages.value.length} ${latestMessage.content}`,
+        content: addPrefix(messages, latestMessage),
         new: true,
       },
       audioPlayer: { player: new speechsdk.SpeakerAudioDestination(), muted: false, alreadyPlayed: false },
@@ -159,18 +157,18 @@ watch(messages, (_): void => {
   if (messages.value[messages.value.length - 1].role === 'user') {
     synthesizeSpeech(entry.message.content, getLastUserResponseIndex())
   }
-  checkHTMLInResponse(`Answer ${messages.value.length} ${messages.value[messages.value.length - 1].content}`)
+  checkHTMLInResponse(addPrefix(messages, latestMessage))
   if (entry.message.content.length > 25 && entry.message.new === true) {
     entry.message.new = false
     addToVoiceResponse(entry.message.content)
     synthesizeSpeech(entry.message.content, getLastAssistantResponseIndex())
   }
 })
-watch(finishReason, (_): void => {
-  if (finishReason.value) {
+watch(responseFinished, (_): void => {
+  if (responseFinished.value) {
     // final run to finish the voice synthesis
     clearInterval(intervalId.value)
-    finishReason.value = false
+    responseFinished.value = false
     voiceSynthesisOnce.value = false
     let message = chatHistory.messages[chatHistory.messages.length - 1].message
     if (!voiceResponse.value.includes(message.content)) {
