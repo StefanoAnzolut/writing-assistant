@@ -278,7 +278,7 @@ function addToVoiceResponse(assistantResponse: string) {
   voiceResponse.value = assistantResponse
 }
 
-function addToChatEditor(index: number) {
+function paste(index: number) {
   let assistantResponse = chatHistory.messages[index].message.content
   if (
     assistantResponse.includes(
@@ -288,9 +288,22 @@ function addToChatEditor(index: number) {
     editorContent.value = editorContent.value.concat(htmlCode.value)
     return
   }
-
-  const matchPrefix = assistantResponse.match(/Answer (\d+) (.*)/)
-  editorContent.value = editorContent.value.concat(`<br/> ${matchPrefix[2]}`)
+  if (editorContent.value !== '') {
+    editorContent.value = editorContent.value.concat('<br/>')
+  }
+  // Special case where html is not identified correctly
+  if (assistantResponse.toLowerCase().includes('html')) {
+    editorContent.value = editorContent.value.concat(assistantResponse)
+    return
+  }
+  const matchPrefix = assistantResponse.match(/Answer (\d+) ([\s\S]*)/)
+  const paragraphs = matchPrefix[2].split('\n')
+  for (const paragraph of paragraphs) {
+    if (paragraph === '') {
+      continue
+    }
+    editorContent.value = editorContent.value.concat(`<p>${paragraph}</p>`)
+  }
 }
 
 function getLastAssistantResponse(): string {
@@ -487,18 +500,7 @@ function repeatLastQuestion() {
                 <h3 v-if="entry.message.role === 'assistant'">
                   {{ entry.message.content }}
                 </h3>
-                <v-container class="d-flex flex-row-reverse">
-                  <v-btn
-                    :id="'addToChatEditor' + i"
-                    icon="mdi-content-paste"
-                    class="ma-1"
-                    color="primary"
-                    @click="addToChatEditor(i)"
-                    aria-label="Add to chat editor"
-                    size="small"
-                    v-if="entry.message.role === 'assistant'"
-                  >
-                  </v-btn>
+                <v-container class="d-flex flex-row justify-end">
                   <v-btn
                     :id="'playPauseButton' + i"
                     :icon="entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
@@ -507,6 +509,17 @@ function repeatLastQuestion() {
                     @click="pause(entry.audioPlayer)"
                     :aria-label="entry.audioPlayer.muted ? 'Play' : 'Pause'"
                     size="small"
+                  >
+                  </v-btn>
+                  <v-btn
+                    :id="'addToChatEditor' + i"
+                    icon="mdi-content-paste"
+                    class="ma-1"
+                    color="primary"
+                    @click="paste(i)"
+                    aria-label="Add to chat editor"
+                    size="small"
+                    v-if="entry.message.role === 'assistant'"
                   >
                   </v-btn>
                 </v-container>
