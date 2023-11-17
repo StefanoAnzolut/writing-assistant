@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useChat, type Message } from 'ai/vue'
-import SiteHeader from './components/SiteHeader.vue'
 import { getTokenOrRefresh } from './utils/token_util'
 import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
 import type { AsyncComponentLoader } from 'vue'
@@ -37,6 +36,7 @@ const voiceResponse = ref('')
 /** The reference to see whether we have reached the end of a streaming response from ChatGPT */
 const responseFinished = ref(false)
 const voiceSynthesisOnce = ref(false)
+const voiceSynthesisStartOver = ref(false)
 /** The selected speaker */
 const selectedSpeaker = ref('Jenny')
 /** Speech-To-Text Recognizer */
@@ -114,20 +114,48 @@ function submitSelectedCallback(event: Event, prompt: string, selectedText: stri
 }
 
 /** As we have modified the chat reponse to include the finish_reason to mark the end of the stream. We need to have some pre-processing. */
-function preprocessLastMessage(latestMessage: Message): Message {
-  responseFinished.value = isFinished(latestMessage.content)
-  latestMessage.content = latestMessage.content.replace('2:"[{\\"done\\":true}]"', '')
-  return latestMessage
+function preprocessMessage(message: Message): Message {
+  responseFinished.value = isFinished(message.content)
+  message.content = message.content.replace('2:"[{\\"done\\":true}]"', '')
+  return message
 }
 
 function isFinished(message: string) {
   return message.includes('2:"[{\\"done\\":true}]"')
 }
 
-function addPrefix(messages, latestMessage) {
+function addPrefixToContent(index, latestMessage) {
+  return latestMessage.role === 'user'
+    ? `Prompt ${index} ${latestMessage.content}`
+    : `Answer ${index} ${latestMessage.content}`
+}
+
+function addToChatHistory(message: Message) {
+  chatHistory.messages.push({
+    message: {
+      id: Date.now().toString(),
+      role: message.role,
+      content: addPrefixToContent(chatHistory.messages.length + 1, message),
+      new: true,
+    },
+    audioPlayer: { player: new speechsdk.SpeakerAudioDestination(), muted: true, alreadyPlayed: false },
+  } as ChatMessage)
+}
+
+function isLastMessageUser() {
   return messages.value[messages.value.length - 1].role === 'user'
-    ? `Prompt ${messages.value.length} ${latestMessage.content}`
-    : `Answer ${messages.value.length} ${latestMessage.content}`
+}
+
+function getLastEntry() {
+  return chatHistory.messages[getLastEntryIndex()]
+}
+
+function getLastEntryIndex() {
+  return chatHistory.messages.length - 1
+}
+
+function getChatHistoryLength() {
+  return chatHistory.messages.length
 }
 
 // TODO: Why do I need this when asking a question from the text editor to the assistant
@@ -137,31 +165,50 @@ function addPrefix(messages, latestMessage) {
  * uses the editorContent for the shared state
  */
 watch(messages, (_): void => {
-  let latestMessage = messages.value[messages.value.length - 1]
-  if (latestMessage.role === 'assistant') {
-    latestMessage = preprocessLastMessage(latestMessage)
+  let message = messages.value[messages.value.length - 1]
+  if (message.role === 'assistant') {
+    message = preprocessMessage(message)
   }
   if (chatHistory.messages.length < messages.value.length) {
-    chatHistory.messages.push({
-      message: {
-        id: Date.now().toString(),
-        role: messages.value[messages.value.length - 1].role,
-        content: addPrefix(messages, latestMessage),
-        new: true,
-      },
-      audioPlayer: { player: new speechsdk.SpeakerAudioDestination(), muted: true, alreadyPlayed: false },
-    } as ChatMessage)
+    addToChatHistory(message)
   }
-  let entry = chatHistory.messages[chatHistory.messages.length - 1]
-  if (messages.value[messages.value.length - 1].role === 'user') {
-    synthesizeSpeech(entry.message.content, getLastUserResponseIndex())
+  let entry = getLastEntry()
+  if (entry.message.role === 'user') {
+    synthesizeSpeech(entry.message.content, getLastEntryIndex())
+    setTimeout(() => {
+      if (isLastMessageUser()) {
+        console.log('Last message', messages.value[messages.value.length - 1])
+        let newMessage = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: 'Generating a structure for you, hold on. This might take a few seconds.',
+        }
+        addToChatHistory(newMessage)
+        synthesizeSpeech(newMessage.content, getLastEntryIndex())
+        voiceSynthesisOnce.value = true
+        let tempEntry = getLastEntry()
+        tempEntry.message.new = false
+      }
+      focusPauseButton()
+      setTimeout(() => {
+        if (
+          getLastEntry().message.content === 'Generating a structure for you, hold on. This might take a few seconds.'
+        ) {
+          synthesizeSpeech('Still generating a response', getLastEntryIndex())
+        }
+      }, 3000)
+    }, 2000)
     return
   }
-  checkHTMLInResponse(addPrefix(messages, latestMessage))
+  checkHTMLInResponse(addPrefixToContent(getChatHistoryLength(), message))
   if (entry.message.content.length > 25 && entry.message.new === true) {
     entry.message.new = false
+    if (entry.message.content.includes('<ai-response>') || entry.message.content.includes('<body>')) {
+      return
+    }
     addToVoiceResponse(entry.message.content)
     synthesizeSpeech(entry.message.content, getLastAssistantResponseIndex())
+    voiceSynthesisOnce.value = true
   }
 })
 watch(responseFinished, (_): void => {
@@ -171,8 +218,13 @@ watch(responseFinished, (_): void => {
     responseFinished.value = false
     voiceSynthesisOnce.value = false
     let message = chatHistory.messages[chatHistory.messages.length - 1].message
+    checkHTMLInResponse(message.content)
     if (!voiceResponse.value.includes(message.content)) {
+      if (message.content.includes('<ai-response>') || message.content.includes('<body>')) {
+        return
+      }
       addToVoiceResponse(chatHistory.messages[chatHistory.messages.length - 1].message.content)
+      voiceSynthesisStartOver.value = true
       synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
       focusPauseButton()
       return
@@ -180,29 +232,39 @@ watch(responseFinished, (_): void => {
   }
 })
 
+function replaceExpression(assistantResponse: string, expression: RegExp) {
+  // const expression = /<ai-response>([\s\S]*?)<\/ai-response>/
+  const match = assistantResponse.match(expression)
+  if (match && match[1]) {
+    htmlCode.value = match[1]
+  }
+  const parts = assistantResponse.split(expression)
+  if (parts.length === 1) {
+    // Special case, where assistant response tag is included in response but the regex does not match
+    setResponse(assistantResponse)
+  } else {
+    parts[1] = parts[1].replace(
+      match[1],
+      '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor. It will be added at the end of the text editor.  ] .'
+    )
+  }
+  const textWithoutHtml = parts.join('')
+  setResponse(textWithoutHtml)
+}
+
 function checkHTMLInResponse(assistantResponse: string) {
-  if (
+  if (assistantResponse.includes('<ai-response>')) {
+    replaceExpression(assistantResponse, /<ai-response>([\s\S]*?)<\/ai-response>/)
+  } else if (
     assistantResponse.includes('```html') ||
     assistantResponse.includes(
-      '[ HTML code placeholder - use the paste button to add the HTML template to the text editor ] .'
+      '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor. It will be added at the end of the text editor.  ] .'
     )
   ) {
-    const expression = /```html([\s\S]*?)```/
-    const match = assistantResponse.match(expression)
-    if (match && match[1]) {
-      htmlCode.value = match[1]
-    }
-    const parts = assistantResponse.split(expression)
-    if (parts.length === 1) {
-      setResponse(assistantResponse)
-    } else {
-      parts[1] = parts[1].replace(
-        match[1],
-        '[ HTML code placeholder - use the paste button to add the HTML template to the text editor ] .'
-      )
-    }
-    const textWithoutHtml = parts.join('')
-    setResponse(textWithoutHtml)
+    replaceExpression(assistantResponse, /```html([\s\S]*?)```/)
+  } else if (assistantResponse.includes('<body>')) {
+    // Special case where html tags and ai-response tags are both missing
+    replaceExpression(assistantResponse, /<body>([\s\S]*?)<\/body>/)
   } else {
     setResponse(assistantResponse)
   }
@@ -220,7 +282,7 @@ async function sttFromMic() {
   window.setTimeout(() => {
     const synth = new Tone.Synth().toDestination()
     synth.triggerAttackRelease('C4', '8n')
-  }, 400)
+  }, 600)
 
   speechRecognizer.value.recognizing = (_, e) => {
     console.log(`RECOGNIZING: Text=${e.result.text}`)
@@ -242,6 +304,20 @@ async function sttFromMic() {
         setResponse(assistantResponse)
         playResponse(getLastAssistantResponseIndex())
       })
+      // setTimeout(() => {
+      //   if (playedRecognizedSpeech.value) {
+      //     return
+      //   }
+      //   input.value = tempRecognizedSpeech.value
+      //   const eventTemp = new Event('submit')
+      //   handleSubmit(eventTemp)
+      //   waitForAssistant().then(assistantResponse => {
+      //     setResponse(assistantResponse)
+      //     playResponse(getLastAssistantResponseIndex())
+      //   })
+      //   tempRecognizedSpeech.value = ''
+      //   playedRecognizedSpeech.value = true
+      // }, 1000)
       speechRecognizer.value.stopContinuousRecognitionAsync()
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
       console.log('NOMATCH: Speech could not be recognized.')
@@ -282,10 +358,11 @@ function addToVoiceResponse(assistantResponse: string) {
 }
 
 function paste(index: number) {
+  synthesizeSpeech('Pasted to the text editor and inserted at the end', -1)
   let assistantResponse = chatHistory.messages[index].message.content
   if (
     assistantResponse.includes(
-      '[ HTML code placeholder - use the paste button to add the HTML template to the text editor ] .'
+      '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor. It will be added at the end of the text editor.  ] .'
     )
   ) {
     editorContent.value = editorContent.value.concat(htmlCode.value)
@@ -382,9 +459,12 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
     audioPlayer.player.onAudioStart = () => {
       prevAudioPlayer.value.player.pause()
       let currentTime = prevAudioPlayer.value.player.currentTime
-      if (currentTime !== -1) {
+      if (currentTime !== -1 && !voiceSynthesisStartOver.value) {
         // round to 2 decimal places
         audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
+      }
+      if (voiceSynthesisStartOver.value) {
+        voiceSynthesisStartOver.value = false
       }
       chatHistory.messages[audioPlayerIndex].audioPlayer.muted = false
       focusPauseButton()
@@ -403,7 +483,7 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
     result => {
       let text
       if (result.reason === speechsdk.ResultReason.SynthesizingAudioCompleted) {
-        if (chatHistory.messages[audioPlayerIndex].message.role === 'user') {
+        if (audioPlayerIndex !== -1 && chatHistory.messages[audioPlayerIndex].message.role === 'user') {
           chatHistory.messages[audioPlayerIndex].audioPlayer.player.pause()
           chatHistory.messages[audioPlayerIndex].audioPlayer.muted = true
         }
@@ -433,6 +513,9 @@ async function playResponse(index: number) {
     // continue the voice synthesis only once, after that wait until end or response
     if (!voiceSynthesisOnce.value) {
       console.log('playedOnce response')
+      if (message.content.includes('<ai-response>') || message.content.includes('<body>')) {
+        return
+      }
       synthesizeSpeech(voiceResponse.value, index)
       voiceSynthesisOnce.value = true
     }
