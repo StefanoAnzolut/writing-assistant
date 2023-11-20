@@ -637,7 +637,7 @@ function repeatLastQuestion() {
               >
                 <div class="chat-inner">
                   <h2 class="aria-invisible" v-if="entry.message.role === 'user'">
-                    {{ entry.message.content.substring(0, 30) }}
+                    {{ entry.message.content.substring(0, 50) }}
                   </h2>
                   <p class="h3-style" v-if="entry.message.role === 'user'">{{ entry.message.content }}</p>
                   <h3 v-if="entry.message.role === 'assistant'">
