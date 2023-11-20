@@ -9,24 +9,24 @@ export const actions = [
     name: 'checkSpelling',
     label: 'Spell check',
     prompt:
-      'Spell check the following content and make it such that the response can immediately be added to a text editor: ',
+      'Spell check the following content and only return the corrected version, do not include other information.  ',
   },
   {
-    name: 'define',
-    label: 'Define',
+    name: 'simplify',
+    label: 'Simplify',
     prompt:
-      'Define the following content and make it such that the response can immediately be added to a text editor: ',
+      'Simplify the following content and make it such that the response can immediately be added to a text editor: ',
+  },
+  {
+    name: 'readAloud',
+    label: 'Read Aloud',
+    prompt: 'READ',
   },
   {
     name: 'findSynonyms',
     label: 'Find synonyms',
     prompt:
       'Find synonyms for the following content and make it such that the response can immediately be added to a text editor: ',
-  },
-  {
-    name: 'readAloud',
-    label: 'Read Aloud',
-    prompt: 'READ',
   },
   {
     name: 'reformulate',
@@ -112,7 +112,7 @@ export function registerActions(
       exec: function (editor) {
         const range = editor.getSelection().getRanges()[0]
         const selected_fragment = range.cloneContents()
-        const selected_text = selected_fragment.$['textContent']
+        const selected_text = selected_fragment.getHtml()
         submitSelectedCallback(new Event('submit'), action.prompt, selected_text)
       },
     })

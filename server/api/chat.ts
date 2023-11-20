@@ -71,7 +71,7 @@ async function checkStructureRequest(message: Message) {
   /** Provide me a structure for a paper
 Write me a template for a conference
 How does a scientific work for a qualitative study look like? */
-
+  let excluded_keywords = ['summarize', 'checkSpelling', 'simplify', 'reformulate', 'concise']
   let keywords = [
     'structure',
     'template',
@@ -100,7 +100,9 @@ How does a scientific work for a qualitative study look like? */
     'newspaper',
   ]
   let systemPrompt = `You are an agent that preprocesses messages and identifies whether the request is asking for support of academic writing.
-    This includes any help with the following: ${keywords.join(', ')}.}
+    This includes any help with the following: ${keywords.join(
+      ', '
+    )}.} And excludes the following: ${excluded_keywords.join(', ')}.
     If the USER REQUEST asks for for any of them, you reply with true otherwise
     reply with false and the reason why it is not an aid request in three sentences at most.\n
     Here are a few examples for reference:
@@ -169,7 +171,14 @@ export default defineLazyEventHandler(async () => {
       // data.append({ structureRequest: true })
       const improvedPrompt = await improvePrompt(lastMessage)
       lastMessage.content = improvedPrompt.concat(
-        " Please provide valid HTML tags for the structure of the document. Only reply with the content of the html body, do not include a <header> or a <footer>. If you don't know how to create valid HTML tags, try anyway. Additionally make sure to wrap only the <body> </bod> html part in an <ai-reponse> tag. This is the most important to me, as I deeply rely on the correct structure."
+        `Your answer formatting requirements:
+        - Please provide valid HTML tags for the structure of the document.
+        - Only reply with the content of the html body, do not include a <header> or a <footer>.
+        - Also do not include any <script> or <style> tags, this includes no inline-styling.
+        - If you don't know how to create valid HTML tags, try anyway.
+        - Additionally make sure to wrap only the <body> </bod> html part in an <ai-reponse> tag.
+        These formatting requirements are very important for visually-impaired users.
+        Thus, I deeply rely on the correct structure.`
       )
       finalMessages[finalMessages.length - 1].content = lastMessage.content
       console.log('The final message with prompt improvement is: ', lastMessage.content)

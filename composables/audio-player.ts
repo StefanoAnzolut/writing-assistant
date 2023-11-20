@@ -16,7 +16,7 @@ export async function pause(audioPlayer: AudioPlayer) {
 //   audioPlayer.muted = true
 // }
 
-// export async function replayAudio(audioPlayer: AudioPlayer) {
-//   audioPlayer.player.pause()
-//   audioPlayer.player.resume()
-// }
+export async function replayAudio(audioPlayer: AudioPlayer) {
+  audioPlayer.player.pause()
+  audioPlayer.player.resume()
+}

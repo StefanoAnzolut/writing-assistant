@@ -8,7 +8,7 @@ import type { ChatHistory } from './models/ChatHistory'
 import { removeFormElementRoles } from './utils/CKEditor'
 import type { AudioPlayer } from './models/AudioPlayer'
 import type { ChatMessage } from './models/ChatMessage'
-import { pause } from './composables/audio-player'
+import { pause, replayAudio } from './composables/audio-player'
 
 useHead({
   title: 'Writing Partner',
@@ -30,8 +30,11 @@ const chatHistory: ChatHistory = reactive({ messages: [] as ChatMessage[] })
 
 /** Shared editor content between the user and the writing partner */
 const editorContent = ref('')
-/** A temporary store for the selected text from the text editor for custom questions */
-const selectedTextForPrompt = ref('')
+/** A temporary store for the selected text from the text editor for custom questions and easier replacement */
+const selectedText = ref('')
+
+const lastContextMenuAction = ref('')
+
 /** The html code that is retrieved from the ChatGPT response */
 const htmlCode = ref('')
 
@@ -67,6 +70,9 @@ if (process.client) {
 }
 function onNamespaceLoaded() {
   CKEDITOR.on('instanceReady', function (ck: { editor: any }) {
+    ck.editor.removeMenuItem('cut')
+    ck.editor.removeMenuItem('copy')
+    ck.editor.removeMenuItem('paste')
     registerActions(ck.editor, submitSelectedCallback)
     removeFormElementRoles()
   })
@@ -77,9 +83,8 @@ function submit(e: any): void {
   if (input.value === '') {
     input.value = input.value.concat(editorContent.value)
   }
-  if (selectedTextForPrompt.value !== '') {
-    input.value = input.value.concat(selectedTextForPrompt.value)
-    selectedTextForPrompt.value = ''
+  if (selectedText.value !== '') {
+    input.value = input.value.concat(selectedText.value)
   }
   handleSubmit(e)
   waitForAssistant().then(assistantResponse => {
@@ -89,17 +94,25 @@ function submit(e: any): void {
 }
 
 /** Submission wrapper for the callback action of the context menu */
-function submitSelectedCallback(event: Event, prompt: string, selectedText: string) {
+function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEditor: string) {
+  actions.forEach(action => {
+    if (action.prompt === prompt) {
+      lastContextMenuAction.value = action.name
+    }
+  })
+  // Setting the selected text from the text editor to the shared state
+  selectedText.value = selectedTextFromEditor
+
   // const selected = window.getSelection()
   if (prompt === 'STORE') {
-    selectedTextForPrompt.value = selectedText
+    selectedText.value = selectedTextFromEditor
     const chatInput = document.getElementById('chat-input')
     if (chatInput) {
       chatInput.focus()
     }
     return
   }
-  if (selectedText === '') {
+  if (selectedTextFromEditor === '') {
     messages.value.push({
       id: Date.now().toString(),
       role: 'assistant',
@@ -109,10 +122,10 @@ function submitSelectedCallback(event: Event, prompt: string, selectedText: stri
     playResponse(getLastAssistantResponseIndex())
     return
   } else if (prompt === 'READ') {
-    synthesizeSpeech(selectedText, -2)
+    synthesizeSpeech(selectedTextFromEditor.replace(/<[^>]*>/g, '\n'), -2)
     return
   }
-  input.value = input.value.concat(prompt + selectedText)
+  input.value = input.value.concat(prompt + selectedTextFromEditor)
   try {
     handleSubmit(event)
   } catch (e) {
@@ -192,8 +205,23 @@ watch(messages, (_): void => {
         let newMessage = {
           id: Date.now().toString(),
           role: 'assistant',
-          content: 'Generating a structure for you, hold on. This might take a few seconds.',
+          content: 'Generating a structure for you, hold on. This might take a bit.',
         }
+        if (!messages.value[messages.value.length - 1].content.includes('<ai-response>')) {
+          newMessage.content = 'Generating a structure for you, hold on. This might take a bit.'
+        }
+        setTimeout(() => {
+          if (
+            responseFinished.value !== true &&
+            messages.value[messages.value.length - 1].content.includes('<ai-response>') &&
+            !chatHistory.messages[chatHistory.messages.length - 1].message.content.includes(
+              'Here is how a structure would look like'
+            )
+          ) {
+            synthesizeSpeech('Still generating the structure.', getLastEntryIndex())
+            replayAudio(chatHistory.messages[chatHistory.messages.length - 1].audioPlayer)
+          }
+        }, 25000)
         addToChatHistory(newMessage)
         synthesizeSpeech(newMessage.content, getLastEntryIndex())
         voiceSynthesisOnce.value = true
@@ -201,14 +229,7 @@ watch(messages, (_): void => {
         tempEntry.message.new = false
       }
       focusPauseButton()
-      setTimeout(() => {
-        if (
-          getLastEntry().message.content === 'Generating a structure for you, hold on. This might take a few seconds.'
-        ) {
-          synthesizeSpeech('Still generating a response', getLastEntryIndex())
-        }
-      }, 3000)
-    }, 2000)
+    }, 3000)
     return
   }
   checkHTMLInResponse(addPrefixToContent(getChatHistoryLength(), message))
@@ -370,30 +391,67 @@ function addToVoiceResponse(assistantResponse: string) {
   voiceResponse.value = assistantResponse
 }
 
-function paste(index: number) {
-  synthesizeSpeech('Pasted to the text editor and inserted at the end', -1)
-  let assistantResponse = chatHistory.messages[index].message.content
+function IsInlineModification() {
+  if (
+    lastContextMenuAction.value === 'summarize' ||
+    lastContextMenuAction.value === 'checkSpelling' ||
+    lastContextMenuAction.value === 'simplify' ||
+    lastContextMenuAction.value === 'reformulate' ||
+    lastContextMenuAction.value === 'concise'
+  ) {
+    return true
+  }
+  return false
+}
+
+function containsHTML(assistantResponse: string): boolean {
   if (
     assistantResponse.includes(
       '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor. It will be added at the end of the text editor.  ] .'
     )
   ) {
     editorContent.value = editorContent.value.concat(htmlCode.value)
-    return
-  }
-  if (editorContent.value !== '') {
-    editorContent.value = editorContent.value.concat('<br/>')
+    return true
   }
   // Special case where html is not identified correctly
   if (assistantResponse.toLowerCase().includes('html')) {
     editorContent.value = editorContent.value.concat(assistantResponse)
+    return true
+  }
+  return false
+}
+
+function paste(index: number) {
+  let assistantResponse = chatHistory.messages[index].message.content
+
+  const matchPrefix = assistantResponse.match(/Answer (\d+) ([\s\S]*)/)
+  if (!matchPrefix) {
     return
   }
-  const matchPrefix = assistantResponse.match(/Answer (\d+) ([\s\S]*)/)
+  if (IsInlineModification()) {
+    // TODO: What html differences/inconsistencies between editorContent and selectedText can occur?
+    editorContent.value = editorContent.value.replace('&nbsp;', ' ')
+
+    const replaceHtmlText = selectedText.value.split(/<[^>]*>/g)
+    replaceHtmlText.forEach(element => {
+      if (element != '') {
+        editorContent.value = editorContent.value.replace(element, matchPrefix[2])
+      }
+    })
+
+    synthesizeSpeech('Modified the selected content directly.', -1)
+    return
+  }
+  if (containsHTML(assistantResponse)) {
+    return
+  }
+  synthesizeSpeech('Pasted to the text editor.', -1)
+  // making the response text editor friendly
   const paragraphs = matchPrefix[2].split('\n')
   for (const paragraph of paragraphs) {
-    console.log('Paragraph: ', paragraph)
-    if (paragraph === '') {
+    paragraph.trim()
+    const paragraphWithoutTags = paragraph.replace(/<[^>]*>/g, '')
+    if (paragraphWithoutTags === '') {
       continue
     }
     editorContent.value = editorContent.value.concat(`<p>${paragraph}</p>`)
@@ -440,9 +498,10 @@ function getAudioPlayer(index: number): AudioPlayer {
 async function focusReadAloudPauseButton() {
   await nextTick()
   let playPauseButtonReadAloudId = document.getElementById('playPauseButtonReadAloud')
-  console.log(playPauseButtonReadAloudId)
   if (playPauseButtonReadAloudId !== null) {
     playPauseButtonReadAloudId.focus()
+  } else {
+    focusReadAloudPauseButton()
   }
 }
 
