@@ -15,6 +15,10 @@ useHead({
   meta: [{ name: 'An AI-powered writing partner' }],
 })
 
+// onMounted(() => {
+//   console.log('mounted!')
+//   // document.body.style.backgroundColor = '#36454F'
+// })
 const { messages, input, handleSubmit } = useChat({
   headers: { 'Content-Type': 'application/json' },
 })
@@ -45,6 +49,9 @@ const speechRecognizer = ref({} as speechsdk.SpeechRecognizer)
 const prevAudioPlayer = ref({} as AudioPlayer)
 /** A global reference to de-allocated the periodic interval check to add new content when response is being streamed */
 const intervalId = ref({} as NodeJS.Timeout)
+
+const readAloudAudioPlayer = ref({} as AudioPlayer)
+const showReadAloudAudioPlayer = ref({ show: false })
 
 /** Load and set editor from proxy file server,
  *  as there were several issues with providing static files via Nuxt.
@@ -98,7 +105,7 @@ function submitSelectedCallback(event: Event, prompt: string, selectedText: stri
     playResponse(getLastAssistantResponseIndex())
     return
   } else if (prompt === 'READ') {
-    synthesizeSpeech(selectedText, -1)
+    synthesizeSpeech(selectedText, -2)
     return
   }
   input.value = input.value.concat(prompt + selectedText)
@@ -423,6 +430,15 @@ function getAudioPlayer(index: number): AudioPlayer {
   return chatHistory.messages[index].audioPlayer
 }
 
+async function focusReadAloudPauseButton() {
+  await nextTick()
+  let playPauseButtonReadAloudId = document.getElementById('playPauseButtonReadAloud')
+  console.log(playPauseButtonReadAloudId)
+  if (playPauseButtonReadAloudId !== null) {
+    playPauseButtonReadAloudId.focus()
+  }
+}
+
 async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
   if (textToSpeak === '') {
     return
@@ -442,7 +458,7 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
     muted: true,
     alreadyPlayed: false,
   }
-  if (audioPlayerIndex !== -1) {
+  if (audioPlayerIndex !== -1 && audioPlayerIndex !== -2) {
     let audioPlayer = getAudioPlayer(audioPlayerIndex)
     prevAudioPlayer.value = audioPlayer
     // audioPlayer.player.pause()
@@ -471,6 +487,23 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
     }
     newAudioPlayer.player = audioPlayer.player
     chatHistory.messages[audioPlayerIndex].audioPlayer = newAudioPlayer
+  } else if (audioPlayerIndex === -2) {
+    let audioPlayer = {
+      player: new speechsdk.SpeakerAudioDestination(),
+      muted: true,
+      alreadyPlayed: false,
+    }
+    audioPlayer.player.onAudioEnd = audioPlayer => {
+      audioPlayer.pause()
+      readAloudAudioPlayer.value.muted = true
+      readAloudAudioPlayer.value.alreadyPlayed = true
+      showReadAloudAudioPlayer.value.show = false
+    }
+    audioPlayer.player.onAudioStart = () => {
+      readAloudAudioPlayer.value.muted = false
+    }
+    newAudioPlayer.player = audioPlayer.player
+    readAloudAudioPlayer.value = newAudioPlayer
   }
 
   console.log('synthesizing text')
@@ -483,9 +516,17 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
     result => {
       let text
       if (result.reason === speechsdk.ResultReason.SynthesizingAudioCompleted) {
-        if (audioPlayerIndex !== -1 && chatHistory.messages[audioPlayerIndex].message.role === 'user') {
+        if (
+          audioPlayerIndex !== -1 &&
+          audioPlayerIndex !== -2 &&
+          chatHistory.messages[audioPlayerIndex].message.role === 'user'
+        ) {
           chatHistory.messages[audioPlayerIndex].audioPlayer.player.pause()
           chatHistory.messages[audioPlayerIndex].audioPlayer.muted = true
+        }
+        if (audioPlayerIndex === -2) {
+          showReadAloudAudioPlayer.value.show = true
+          focusReadAloudPauseButton()
         }
         text = `synthesis finished for "${textToSpeak}".\n`
         // focusPauseButton()
@@ -641,6 +682,15 @@ function repeatLastQuestion() {
               </div>
             </client-only>
           </div>
+          <v-btn
+            id="playPauseButtonReadAloud"
+            :icon="readAloudAudioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
+            class="ma-1"
+            :color="readAloudAudioPlayer.muted ? 'success' : 'error'"
+            v-if="showReadAloudAudioPlayer.show"
+            :aria-label="readAloudAudioPlayer.muted ? 'Play' : 'Pause'"
+            @click="pause(readAloudAudioPlayer)"
+          ></v-btn>
         </div>
       </v-col>
     </v-row>
@@ -670,7 +720,6 @@ function repeatLastQuestion() {
 
 .chat {
   width: 100%;
-  max-width: 28rem;
   background-color: #ffffff;
   border: #ccced1 1px solid;
   display: flex;
@@ -705,7 +754,6 @@ function repeatLastQuestion() {
   border-color: #d1d5db;
   width: 100%;
   height: 48px;
-  max-width: 28rem;
   box-shadow:
     0 20px 25px -5px rgba(0, 0, 0, 0.1),
     0 10px 10px -5px rgba(0, 0, 0, 0.04);
