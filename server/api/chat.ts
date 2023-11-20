@@ -1,11 +1,11 @@
 import OpenAI from 'openai'
 import { Message, OpenAIStream, StreamingTextResponse, experimental_StreamData } from 'ai'
 import { encoding_for_model } from '@dqbd/tiktoken'
-import { ChatCompletionCreateParams } from 'openai/resources'
 
 const apiKey = process.env.AZURE_API_KEY
 const resource = 'mt-gpt4at'
 const model = 'gpt35'
+const bestModel = 'gpt4'
 console.log('Current model is: ', model)
 
 // Azure OpenAI requires a custom baseURL, api-version query param, and api-key header.
@@ -16,7 +16,13 @@ const openai = new OpenAI({
   defaultHeaders: { 'api-key': apiKey },
 })
 
-async function askOpenAI(messages: Message[], stream: boolean) {
+async function askOpenAI(
+  messages: Message[],
+  stream: boolean,
+  model: string = 'gpt35'
+): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  openai.baseURL = `https://${resource}.openai.azure.com/openai/deployments/${model}`
+  console.log(openai.baseURL)
   let chatCompletionObject = {
     model: 'gpt-3.5-turbo',
     messages: messages.map(message => ({
@@ -65,8 +71,45 @@ async function checkStructureRequest(message: Message) {
   /** Provide me a structure for a paper
 Write me a template for a conference
 How does a scientific work for a qualitative study look like? */
-  let systemPrompt =
-    'You are an agent that preprocesses messages and identifies whether the request is asking for any structure, template, an example, formatting of the paper or draft. If the USER REQUEST asks for any kind of structure, template, an example, draft, formatting of the paper or outline of a scientific work document you reply with true otherwise reply with false and the reason why it is not a request for structure in three sentences at most.\n'
+
+  let keywords = [
+    'structure',
+    'template',
+    'example',
+    'formatting',
+    'draft',
+    'outline',
+    'article',
+    'paper',
+    'report',
+    'thesis',
+    'dissertation',
+    'manuscript',
+    'chapter',
+    'essay',
+    'letter',
+    'email',
+    'document',
+    'text',
+    'writing',
+    'composition',
+    'piece',
+    'work',
+    'publication',
+    'journal',
+    'newspaper',
+  ]
+  let systemPrompt = `You are an agent that preprocesses messages and identifies whether the request is asking for support of academic writing.
+    This includes any help with the following: ${keywords.join(', ')}.}
+    If the USER REQUEST asks for for any of them, you reply with true otherwise
+    reply with false and the reason why it is not an aid request in three sentences at most.\n
+    Here are a few examples for reference:
+    - Provide me a structure for a paper
+    - Write me a template for a conference
+    - How does a scientific work for a qualitative study look like?
+    If the question is similar or shares a similar intention to the references also reply with true.
+    `
+  // structure, template, an example, formatting of the paper or draft. If the USER REQUEST asks for any kind of structure, template, an example, draft, formatting of the paper or outline of a scientific work document you reply with true otherwise reply with false and the reason why it is not a request for structure in three sentences at most.\n`
   let messages = [
     {
       content: systemPrompt,
@@ -135,8 +178,9 @@ export default defineLazyEventHandler(async () => {
     console.log('The following messages are being sent:\n')
     console.log(finalMessages)
 
+    console.log('The final message to complete is the following:\n', finalMessages[finalMessages.length - 1])
     let streaming = true
-    const response = await askOpenAI(finalMessages, streaming)
+    const response = await askOpenAI(finalMessages, streaming, bestModel)
 
     const stream = OpenAIStream(response, {
       onFinal() {
