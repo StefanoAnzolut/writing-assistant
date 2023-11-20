@@ -392,6 +392,7 @@ function paste(index: number) {
   const matchPrefix = assistantResponse.match(/Answer (\d+) ([\s\S]*)/)
   const paragraphs = matchPrefix[2].split('\n')
   for (const paragraph of paragraphs) {
+    console.log('Paragraph: ', paragraph)
     if (paragraph === '') {
       continue
     }
@@ -633,10 +634,9 @@ function repeatLastQuestion() {
                 key="m.id"
                 class="chat-message"
                 :class="chatHistory.messages[i].message.role === 'user' ? 'user-message' : 'assistant-message'"
-                tabindex="-1"
               >
                 <div class="chat-inner">
-                  <h2 class="hide-prompt-heading" v-if="entry.message.role === 'user'">
+                  <h2 class="aria-invisible" v-if="entry.message.role === 'user'">
                     {{ entry.message.content.substring(0, 30) }}
                   </h2>
                   <p class="h3-style" v-if="entry.message.role === 'user'">{{ entry.message.content }}</p>
@@ -707,9 +707,21 @@ function repeatLastQuestion() {
 .hide-prompt-heading {
   visibility: hidden;
 }
+/* Somehow, visibility hidden lead to inconsitent reading order for screen readers.
+https://stackoverflow.com/questions/62107074/how-to-hide-a-text-and-make-it-accessible-by-screen-reader */
+.aria-invisible {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  width: 1px;
+}
+
 .h3-style {
   font-size: 1.17em;
-  margin-block-start: -0.83em;
   margin-inline-start: 0px;
   margin-inline-end: 0px;
   font-weight: bold;
