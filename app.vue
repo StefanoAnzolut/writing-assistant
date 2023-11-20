@@ -35,21 +35,25 @@ const selectedTextForPrompt = ref('')
 /** The html code that is retrieved from the ChatGPT response */
 const htmlCode = ref('')
 
-/** Voice response from ChatGPT */
-const voiceResponse = ref('')
-/** The reference to see whether we have reached the end of a streaming response from ChatGPT */
-const responseFinished = ref(false)
-const voiceSynthesisOnce = ref(false)
-const voiceSynthesisStartOver = ref(false)
-/** The selected speaker */
-const selectedSpeaker = ref('Jenny')
 /** Speech-To-Text Recognizer */
 const speechRecognizer = ref({} as speechsdk.SpeechRecognizer)
-/** Currently playing audio player to snatch currentTime */
-const prevAudioPlayer = ref({} as AudioPlayer)
+
+/** The reference to see whether we have reached the end of a streaming response from ChatGPT */
+const responseFinished = ref(false)
 /** A global reference to de-allocated the periodic interval check to add new content when response is being streamed */
 const intervalId = ref({} as NodeJS.Timeout)
 
+/** The selected speaker for Text-To-Speech */
+const selectedSpeaker = ref('Jenny')
+const voiceSynthesisOnce = ref(false)
+const voiceSynthesisStartOver = ref(false)
+
+/** Voice response from ChatGPT */
+const voiceResponse = ref('')
+
+/** Currently playing audio player to snatch currentTime */
+const prevAudioPlayer = ref({} as AudioPlayer)
+/** Read aloud audio player and it's overlay flag */
 const readAloudAudioPlayer = ref({} as AudioPlayer)
 const showReadAloudAudioPlayer = ref({ show: false })
 
@@ -281,15 +285,13 @@ async function sttFromMic() {
   const tokenObj = await getTokenOrRefresh()
   const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
   speechConfig.speechRecognitionLanguage = 'en-US'
+  // Speech_SegmentationSilenceTimeoutMs = 32
+  // https://learn.microsoft.com/en-us/javascript/api/microsoft-cognitiveservices-speech-sdk/propertyid?view=azure-node-latest
+  speechConfig.setProperty(32, '3000')
   // Todo: Check additional effort to inlcude auto-detection of language
   const audioConfig = speechsdk.AudioConfig.fromDefaultMicrophoneInput()
   speechRecognizer.value = new speechsdk.SpeechRecognizer(speechConfig, audioConfig)
   speechRecognizer.value.startContinuousRecognitionAsync()
-  // delay signal tone as synthesizer needs some time to start
-  window.setTimeout(() => {
-    const synth = new Tone.Synth().toDestination()
-    synth.triggerAttackRelease('C4', '8n')
-  }, 600)
 
   speechRecognizer.value.recognizing = (_, e) => {
     console.log(`RECOGNIZING: Text=${e.result.text}`)
@@ -311,21 +313,23 @@ async function sttFromMic() {
         setResponse(assistantResponse)
         playResponse(getLastAssistantResponseIndex())
       })
-      // setTimeout(() => {
-      //   if (playedRecognizedSpeech.value) {
-      //     return
-      //   }
-      //   input.value = tempRecognizedSpeech.value
-      //   const eventTemp = new Event('submit')
-      //   handleSubmit(eventTemp)
-      //   waitForAssistant().then(assistantResponse => {
-      //     setResponse(assistantResponse)
-      //     playResponse(getLastAssistantResponseIndex())
-      //   })
-      //   tempRecognizedSpeech.value = ''
-      //   playedRecognizedSpeech.value = true
-      // }, 1000)
       speechRecognizer.value.stopContinuousRecognitionAsync()
+      const env = new Tone.AmplitudeEnvelope({
+        attack: 0.11,
+        decay: 0.21,
+        sustain: 0.5,
+        release: 1.2,
+      }).toDestination()
+      // create an oscillator and connect it to the envelope
+      const osc = new Tone.Oscillator({
+        partials: [3, 2, 1],
+        type: 'custom',
+        frequency: 'C#4',
+        volume: -8,
+      })
+        .connect(env)
+        .start()
+      env.triggerAttackRelease(0.2)
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
       console.log('NOMATCH: Speech could not be recognized.')
       synthesizeSpeech('I did not understand or hear you. Stopping recording of your microphone.', -1)
@@ -348,6 +352,8 @@ async function sttFromMic() {
     speechRecognizer.value.stopContinuousRecognitionAsync()
   }
   speechRecognizer.value.sessionStarted = (s, e) => {
+    const synth = new Tone.Synth().toDestination()
+    synth.triggerAttackRelease('C4', '8n')
     console.log('\n    Session started event.')
   }
 }
