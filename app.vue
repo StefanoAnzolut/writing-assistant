@@ -391,25 +391,19 @@ function addToVoiceResponse(assistantResponse: string) {
   voiceResponse.value = assistantResponse
 }
 
-function IsInlineModification() {
-  if (
-    lastContextMenuAction.value === 'summarize' ||
-    lastContextMenuAction.value === 'checkSpelling' ||
-    lastContextMenuAction.value === 'simplify' ||
-    lastContextMenuAction.value === 'reformulate' ||
-    lastContextMenuAction.value === 'concise'
-  ) {
-    return true
-  }
-  return false
+function IsInlineModification(action: string) {
+  const modifcationActions = ['summarize', 'checkSpelling', 'simplify', 'reformulate', 'concise']
+  return modifcationActions.includes(action)
 }
 
-function containsHTML(assistantResponse: string): boolean {
+function insertHTML(assistantResponse: string): boolean {
   if (
     assistantResponse.includes(
       '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor. It will be added at the end of the text editor.  ] .'
     )
   ) {
+    // removing additional line breaks
+    htmlCode.value = htmlCode.value.replace('<br>', '')
     editorContent.value = editorContent.value.concat(htmlCode.value)
     return true
   }
@@ -421,33 +415,7 @@ function containsHTML(assistantResponse: string): boolean {
   return false
 }
 
-function paste(index: number) {
-  let assistantResponse = chatHistory.messages[index].message.content
-
-  const matchPrefix = assistantResponse.match(/Answer (\d+) ([\s\S]*)/)
-  if (!matchPrefix) {
-    return
-  }
-  if (IsInlineModification()) {
-    // TODO: What html differences/inconsistencies between editorContent and selectedText can occur?
-    editorContent.value = editorContent.value.replace('&nbsp;', ' ')
-
-    const replaceHtmlText = selectedText.value.split(/<[^>]*>/g)
-    replaceHtmlText.forEach(element => {
-      if (element != '') {
-        editorContent.value = editorContent.value.replace(element, matchPrefix[2])
-      }
-    })
-
-    synthesizeSpeech('Modified the selected content directly.', -1)
-    return
-  }
-  if (containsHTML(assistantResponse)) {
-    return
-  }
-  synthesizeSpeech('Pasted to the text editor.', -1)
-  // making the response text editor friendly
-  const paragraphs = matchPrefix[2].split('\n')
+function insertParagraphWise(paragraphs: string[]) {
   for (const paragraph of paragraphs) {
     paragraph.trim()
     const paragraphWithoutTags = paragraph.replace(/<[^>]*>/g, '')
@@ -456,6 +424,46 @@ function paste(index: number) {
     }
     editorContent.value = editorContent.value.concat(`<p>${paragraph}</p>`)
   }
+}
+
+function insertHTMLParagraphWise(assistantResponse: string) {
+  editorContent.value = editorContent.value.replace('&nbsp;', ' ')
+  const selectedTextInnerContent = selectedText.value
+    .split(/<[^>]*>/)
+    .filter(Boolean)
+    .filter(text => text !== '\n')
+  const assistantResponseInnerContent = assistantResponse
+    .split(/<[^>]*>/)
+    .filter(Boolean)
+    .filter(text => text !== '\n')
+  if (selectedTextInnerContent.length !== assistantResponseInnerContent.length) {
+    console.log('assistantResponseInnerContent', assistantResponseInnerContent)
+    console.log('selectedTextInnerContent', selectedTextInnerContent)
+    console.log('Length of assistantResponseInnerContent and selectedTextInnerContent is not equal!')
+    return
+  }
+  for (let i = 0; i < assistantResponseInnerContent.length; i++) {
+    editorContent.value = editorContent.value.replace(selectedTextInnerContent[i], assistantResponseInnerContent[i])
+  }
+  selectedText.value = ''
+}
+
+function paste(index: number) {
+  const matchPrefix = chatHistory.messages[index].message.content.match(/Answer (\d+) ([\s\S]*)/)
+  if (!matchPrefix) {
+    return
+  }
+  let assistantResponse = matchPrefix[2]
+  if (IsInlineModification(lastContextMenuAction.value)) {
+    insertHTMLParagraphWise(assistantResponse)
+    synthesizeSpeech('Modified the selected content directly.', -1)
+    return
+  }
+  synthesizeSpeech('Pasted to the text editor.', -1)
+  if (insertHTML(assistantResponse)) {
+    return
+  }
+  insertParagraphWise(matchPrefix[2].split('\n'))
 }
 
 function getLastAssistantResponse(): string {

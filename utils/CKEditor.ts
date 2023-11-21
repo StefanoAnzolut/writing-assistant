@@ -113,6 +113,11 @@ export function registerActions(
         const range = editor.getSelection().getRanges()[0]
         const selected_fragment = range.cloneContents()
         const selected_text = selected_fragment.getHtml()
+        // TODO: Check whether cursor position is relevant if so, maybe we can pass fragment etc.
+        // let editorVar = CKEDITOR.instances.editor1
+        // console.log(editorVar)
+        // let editorData = editorVar.getData()
+        // console.log('editorData', editorData)
         submitSelectedCallback(new Event('submit'), action.prompt, selected_text)
       },
     })
