@@ -101,11 +101,12 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     }
   })
   // Setting the selected text from the text editor to the shared state
+  selectedTextFromEditor = decodeHtmlCode(decodeHtmlCharCodes(selectedTextFromEditor))
   selectedText.value = selectedTextFromEditor
-
   // const selected = window.getSelection()
+
   if (prompt === 'STORE') {
-    selectedText.value = selectedTextFromEditor
+    // selectedText.value = selectedTextFromEditor
     const chatInput = document.getElementById('chat-input')
     if (chatInput) {
       chatInput.focus()
@@ -113,13 +114,6 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     return
   }
   if (selectedTextFromEditor === '') {
-    messages.value.push({
-      id: Date.now().toString(),
-      role: 'assistant',
-      content: 'No text selected. Please select some text and try again.',
-    })
-    setResponse(messages.value[messages.value.length - 1].content)
-    playResponse(getLastAssistantResponseIndex())
     return
   } else if (prompt === 'READ') {
     synthesizeSpeech(selectedTextFromEditor.replace(/<[^>]*>/g, '\n'), -2)
@@ -150,11 +144,29 @@ function isFinished(message: string) {
 
 function addPrefixToContent(index, latestMessage) {
   return latestMessage.role === 'user'
-    ? `Prompt ${index} ${latestMessage.content}`
-    : `Answer ${index} ${latestMessage.content}`
+    ? `Prompt ${index}\n${latestMessage.content}`
+    : `Answer ${index}\n${latestMessage.content}`
+}
+
+function removeCallbackActionPrefix(content: string): string {
+  if (
+    content.includes(
+      'the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n'
+    )
+  ) {
+    content = content.replace(
+      'the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
+      ''
+    )
+  }
+  if (content.includes('[MODIFICATION_REQUEST]: ')) {
+    content = content.replace('[MODIFICATION_REQUEST]: ', '')
+  }
+  return content
 }
 
 function addToChatHistory(message: Message) {
+  message.content = removeCallbackActionPrefix(message.content)
   chatHistory.messages.push({
     message: {
       id: Date.now().toString(),
@@ -208,7 +220,7 @@ watch(messages, (_): void => {
           content: 'Generating a structure for you, hold on. This might take a bit.',
         }
         if (!messages.value[messages.value.length - 1].content.includes('<ai-response>')) {
-          newMessage.content = 'Generating a structure for you, hold on. This might take a bit.'
+          newMessage.content = 'Generating a structure for you, hold on. This might take a while'
         }
         setTimeout(() => {
           if (
@@ -218,7 +230,10 @@ watch(messages, (_): void => {
               'Here is how a structure would look like'
             )
           ) {
-            synthesizeSpeech('Still generating the structure.', getLastEntryIndex())
+            synthesizeSpeech(
+              'Still generating the structure. This can take up to a minute. You will be notified once its completed. ',
+              getLastEntryIndex()
+            )
             replayAudio(chatHistory.messages[chatHistory.messages.length - 1].audioPlayer)
           }
         }, 25000)
@@ -277,7 +292,7 @@ function replaceExpression(assistantResponse: string, expression: RegExp) {
   } else {
     parts[1] = parts[1].replace(
       match[1],
-      '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor. It will be added at the end of the text editor.  ] .'
+      '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor] .'
     )
   }
   const textWithoutHtml = parts.join('')
@@ -290,7 +305,7 @@ function checkHTMLInResponse(assistantResponse: string) {
   } else if (
     assistantResponse.includes('```html') ||
     assistantResponse.includes(
-      '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor. It will be added at the end of the text editor.  ] .'
+      '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor] .'
     )
   ) {
     replaceExpression(assistantResponse, /```html([\s\S]*?)```/)
@@ -388,18 +403,26 @@ async function waitForAssistant(): Promise<string> {
 }
 
 function addToVoiceResponse(assistantResponse: string) {
-  voiceResponse.value = assistantResponse
+  voiceResponse.value = removeHtmlTags(assistantResponse)
 }
 
 function IsInlineModification(action: string) {
-  const modifcationActions = ['summarize', 'checkSpelling', 'simplify', 'reformulate', 'concise']
+  const modifcationActions = [
+    'summarize',
+    'checkSpelling',
+    'simplify',
+    'reformulate',
+    'concise',
+    'adaptToScientificStyle',
+    'addStructure',
+  ]
   return modifcationActions.includes(action)
 }
 
 function insertHTML(assistantResponse: string): boolean {
   if (
     assistantResponse.includes(
-      '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor. It will be added at the end of the text editor.  ] .'
+      '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor] .'
     )
   ) {
     // removing additional line breaks
@@ -419,6 +442,7 @@ function insertParagraphWise(paragraphs: string[]) {
   for (const paragraph of paragraphs) {
     paragraph.trim()
     const paragraphWithoutTags = paragraph.replace(/<[^>]*>/g, '')
+    console.log('paragraphWithoutTags', paragraphWithoutTags)
     if (paragraphWithoutTags === '') {
       continue
     }
@@ -426,37 +450,73 @@ function insertParagraphWise(paragraphs: string[]) {
   }
 }
 
+const decodeHtmlCharCodes = str =>
+  str.replace(/(&#(\d+);)/g, (match, capture, charCode) => String.fromCharCode(charCode))
+
+const decodeHtmlCode = str =>
+  str
+    .replace(/&amp;/g, '&')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&quot;/g, '"')
+    .replace(/&nbsp;/g, ' ')
+
 function insertHTMLParagraphWise(assistantResponse: string) {
-  editorContent.value = editorContent.value.replace('&nbsp;', ' ')
+  editorContent.value = decodeHtmlCode(decodeHtmlCharCodes(editorContent.value))
+  selectedText.value = decodeHtmlCode(decodeHtmlCharCodes(selectedText.value))
+  console.log('edConVal', editorContent.value)
+  console.log('selText', selectedText.value)
   const selectedTextInnerContent = selectedText.value
     .split(/<[^>]*>/)
     .filter(Boolean)
+    .filter(text => text !== ' ')
     .filter(text => text !== '\n')
+    .filter(text => text !== '\n\n')
+    .filter(text => text !== '\t\n')
   const assistantResponseInnerContent = assistantResponse
     .split(/<[^>]*>/)
     .filter(Boolean)
+    .filter(text => text !== ' ')
     .filter(text => text !== '\n')
+    .filter(text => text !== '\n\n')
+    .filter(text => text !== '\t\n')
   if (selectedTextInnerContent.length !== assistantResponseInnerContent.length) {
     console.log('assistantResponseInnerContent', assistantResponseInnerContent)
     console.log('selectedTextInnerContent', selectedTextInnerContent)
     console.log('Length of assistantResponseInnerContent and selectedTextInnerContent is not equal!')
+    assistantResponseInnerContent.forEach(element => {
+      editorContent.value = editorContent.value.concat(element)
+    })
+    synthesizeSpeech("Couldn't find selection pasting content to end of text editor", -1)
     return
   }
+  synthesizeSpeech('Modified the selected content directly.', -1)
   for (let i = 0; i < assistantResponseInnerContent.length; i++) {
+    console.log('selectedTextInnerContent[i]', selectedTextInnerContent[i])
+    console.log('assistantResponseInnerContent[i]', assistantResponseInnerContent[i])
+    // Complete HTML is already extracted as it was provided in the assistantResponse. We just need to replace the selected text with the HTML stored in htmlCode.value
+    if (
+      assistantResponseInnerContent[i].includes(
+        '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor]'
+      )
+    ) {
+      editorContent.value = editorContent.value.replace(selectedTextInnerContent[i], htmlCode.value)
+    }
+
     editorContent.value = editorContent.value.replace(selectedTextInnerContent[i], assistantResponseInnerContent[i])
+    console.log('FINAL editorContent.value', editorContent.value)
   }
   selectedText.value = ''
 }
 
 function paste(index: number) {
-  const matchPrefix = chatHistory.messages[index].message.content.match(/Answer (\d+) ([\s\S]*)/)
+  const matchPrefix = chatHistory.messages[index].message.content.match(/Answer (\d+)\n([\s\S]*)/)
   if (!matchPrefix) {
     return
   }
   let assistantResponse = matchPrefix[2]
-  if (IsInlineModification(lastContextMenuAction.value)) {
+  if (IsInlineModification(lastContextMenuAction.value) && selectedText.value !== '') {
     insertHTMLParagraphWise(assistantResponse)
-    synthesizeSpeech('Modified the selected content directly.', -1)
     return
   }
   synthesizeSpeech('Pasted to the text editor.', -1)
@@ -472,10 +532,10 @@ function getLastAssistantResponse(): string {
   }
   let lastAssistantResponseIndex = getLastAssistantResponseIndex()
   let content = messages.value[lastAssistantResponseIndex].content
-  if (content.includes(`Answer ${messages.value.length} ${content}`)) {
+  if (content.includes(`Answer ${messages.value.length}\n${content}`)) {
     return content
   } else {
-    return `Answer ${messages.value.length} ${content}`
+    return `Answer ${messages.value.length}\n${content}`
   }
 }
 function getLastAssistantResponseIndex(): number {
@@ -659,6 +719,10 @@ function repeatLastQuestion() {
     playResponse(getLastAssistantResponseIndex())
   })
 }
+
+function removeHtmlTags(content: string) {
+  return content.replace(/<[^>]*>/g, '')
+}
 </script>
 
 <template>
@@ -704,11 +768,13 @@ function repeatLastQuestion() {
               >
                 <div class="chat-inner">
                   <h2 class="aria-invisible" v-if="entry.message.role === 'user'">
-                    {{ entry.message.content.substring(0, 50) }}
+                    {{ removeHtmlTags(entry.message.content.substring(0, 50)) }}
                   </h2>
-                  <p class="h3-style" v-if="entry.message.role === 'user'">{{ entry.message.content }}</p>
+                  <p class="h3-style" v-if="entry.message.role === 'user'">
+                    {{ removeHtmlTags(entry.message.content) }}
+                  </p>
                   <h3 v-if="entry.message.role === 'assistant'">
-                    {{ entry.message.content }}
+                    {{ removeHtmlTags(entry.message.content) }}
                   </h3>
                 </div>
                 <v-container class="d-flex flex-row justify-end">
@@ -755,15 +821,16 @@ function repeatLastQuestion() {
               </div>
             </client-only>
           </div>
-          <v-btn
-            id="playPauseButtonReadAloud"
-            :icon="readAloudAudioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
-            class="ma-1"
-            :color="readAloudAudioPlayer.muted ? 'success' : 'error'"
-            v-if="showReadAloudAudioPlayer.show"
-            :aria-label="readAloudAudioPlayer.muted ? 'Play' : 'Pause'"
-            @click="pause(readAloudAudioPlayer)"
-          ></v-btn>
+          <v-container class="d-flex flex-row justify-end" v-if="showReadAloudAudioPlayer.show">
+            <v-btn
+              id="playPauseButtonReadAloud"
+              :icon="readAloudAudioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
+              class="ma-1"
+              :color="readAloudAudioPlayer.muted ? 'success' : 'error'"
+              :aria-label="readAloudAudioPlayer.muted ? 'Play' : 'Pause'"
+              @click="pause(readAloudAudioPlayer)"
+            ></v-btn>
+          </v-container>
         </div>
       </v-col>
     </v-row>

@@ -67,11 +67,15 @@ function checkContextLengthAndUpdateSlidingWindow(messages) {
 }
 
 async function checkStructureRequest(message: Message) {
-  // Check if the message is asking for a structure or a template
-  /** Provide me a structure for a paper
-Write me a template for a conference
-How does a scientific work for a qualitative study look like? */
-  let excluded_keywords = ['summarize', 'checkSpelling', 'simplify', 'reformulate', 'concise']
+  // Direct context menu structure request
+  if (message.content.includes('Add structure to the following content')) {
+    return true
+  }
+  // Direct context menu action with modifcation in mind
+  if (message.content.includes('[MODIFICATION_REQUEST]:')) {
+    return false
+  }
+  // Use GPT to check whether the message is a structure request
   let keywords = [
     'structure',
     'template',
@@ -100,9 +104,7 @@ How does a scientific work for a qualitative study look like? */
     'newspaper',
   ]
   let systemPrompt = `You are an agent that preprocesses messages and identifies whether the request is asking for support of academic writing.
-    This includes any help with the following: ${keywords.join(
-      ', '
-    )}.} And excludes the following: ${excluded_keywords.join(', ')}.
+    This includes any help with the following: ${keywords.join(', ')}
     If the USER REQUEST asks for for any of them, you reply with true otherwise
     reply with false and the reason why it is not an aid request in three sentences at most.\n
     Here are a few examples for reference:
@@ -171,7 +173,8 @@ export default defineLazyEventHandler(async () => {
       // data.append({ structureRequest: true })
       const improvedPrompt = await improvePrompt(lastMessage)
       lastMessage.content = improvedPrompt.concat(
-        `Your answer formatting requirements:
+        `\n This is a mere example, I want you to improve its structure and make it more detailed. It should include clear sections and headings and ensure that each part is well-defined.\n
+        Your answer formatting requirements:
         - Please provide valid HTML tags for the structure of the document.
         - Only reply with the content of the html body, do not include a <header> or a <footer>.
         - Also do not include any <script> or <style> tags, this includes no inline-styling.

@@ -1,62 +1,60 @@
 export const actions = [
   {
-    name: 'summarize',
-    label: 'Summarize',
-    prompt:
-      'Summarize the following content and make it such that the response can immediately be added to a text editor: ',
-  },
-  {
-    name: 'checkSpelling',
-    label: 'Spell check',
-    prompt:
-      'Spell check the following content and only return the corrected version, do not include other information.  ',
-  },
-  {
-    name: 'simplify',
-    label: 'Simplify',
-    prompt:
-      'Simplify the following content and make it such that the response can immediately be added to a text editor: ',
-  },
-  {
     name: 'readAloud',
     label: 'Read Aloud',
     prompt: 'READ',
   },
   {
+    name: 'checkSpelling',
+    label: 'Spell check',
+    prompt:
+      '[MODIFICATION_REQUEST]: Spell check\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
+  },
+  {
+    name: 'summarize',
+    label: 'Summarize',
+    prompt:
+      '[MODIFICATION_REQUEST]: Summarize\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
+  },
+  {
+    name: 'simplify',
+    label: 'Simplify',
+    prompt:
+      '[MODIFICATION_REQUEST]: Simplify\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
+  },
+  {
     name: 'findSynonyms',
     label: 'Find synonyms',
     prompt:
-      'Find synonyms for the following content and make it such that the response can immediately be added to a text editor: ',
+      '[MODIFICATION_REQUEST]: Find synonyms\n for the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
   },
   {
     name: 'reformulate',
     label: 'Formulate differently',
     prompt:
-      'Reformulate the following content and make it such that the response can immediately be added to a text editor: ',
+      '[MODIFICATION_REQUEST]: Reformulate\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
   },
   {
     name: 'concise',
     label: 'Make more concise',
     prompt:
-      'Concise the following content and make it such that the response can immediately be added to a text editor: ',
+      '[MODIFICATION_REQUEST]: Make concise\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
   },
   {
     name: 'addStructure',
     label: 'Add structure',
-    prompt:
-      'Add structure to the following content and make it such that the response can immediately be added to a text editor: ',
+    prompt: '[MODIFICATION_REQUEST]: Add structure to the following content:\n',
   },
   {
     name: 'giveWritingAdvice',
     label: 'Give scientific writing advice',
-    prompt:
-      'Give writing advice for the following content and make it such that the response can immediately be added to a text editor: ',
+    prompt: 'Give scientific writing advice \n for the following content:',
   },
   {
     name: 'adaptToScientificStyle',
     label: 'Reformulate to scientific style',
     prompt:
-      'Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor Selection start marker:',
+      '[MODIFICATION_REQUEST]: Adapt to scientific style \n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
   },
   {
     name: 'askQuestion',
