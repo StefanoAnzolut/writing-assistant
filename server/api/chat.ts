@@ -136,8 +136,32 @@ async function checkStructureRequest(message: Message) {
 }
 
 async function improvePrompt(message: Message) {
-  let systemPrompt =
-    'You are now tasked to improve the current prompt to make it more accurate and detailed. Only update the current prompt and return it.'
+  // How to write a scientific article Hoogenboom BJ, Manske RC.
+  let systemPrompt = `
+  You are now tasked to improve the current prompt to make it more accurate and detailed. Only update the current prompt and return it.
+
+  When reviewers are deciding on whether to accept manuscripts for publication, they prioritize the following five key criteria:
+  1) The significance, current relevance, applicability, and commonality of the issue being addressed
+  2) The caliber of the manuscript's writing style, ensuring that it's well-articulated, clear, direct, easy to comprehend, and logical
+  3) The suitability, thoroughness, and rigor of the study design applied in the manuscript
+  4) How well the literature review was conducted - it should be thoughtful, focused, and up-to-date
+  5) The application of a sufficiently large and representative sample
+  In contrast, there are specific reasons that lead reviewers to reject manuscripts. The top five reasons include:
+  1) The use of inappropriate, incomplete, or inadequately described statistical methods
+  2) The over-interpretation or exaggeration of study results
+  3) The utilization of inappropriate, suboptimal, or poorly described populations or research tools
+  4) The inclusion of small or biased samples which may skew results
+  5) Manuscripts that are poorly written or hard to understand due to convoluted language
+
+  To ensure that manuscripts are accessible to a wide range of readers, including those from different disciplines and non-native English speakers, authors should strive to write in a clear, simple manner.
+  Avoiding technical jargon wherever possible and providing clear explanations when its use is unavoidable is highly recommended.
+  Authors should also limit the use of abbreviations, particularly non-standard ones.
+  The background, rationale, and main conclusions of the study should be clearly articulated.
+  Titles and abstracts should be written in a manner easily comprehensible to any scientist.
+  Specialized but essential terms should be concisely explained without resorting to a didactic tone.
+    `
+  // From Nature readability
+  // Rewritten by GPT-4
   let messages = [
     {
       content: systemPrompt,
@@ -173,26 +197,24 @@ export default defineLazyEventHandler(async () => {
       // data.append({ structureRequest: true })
       const improvedPrompt = await improvePrompt(lastMessage)
       lastMessage.content = improvedPrompt.concat(
-        `\n This is a mere example, I want you to improve its structure and make it more detailed. It should include clear sections and headings and ensure that each part is well-defined.\n
+        `
         Your answer formatting requirements:
         - Please provide valid HTML tags for the structure of the document.
         - Only reply with the content of the html body, do not include a <header> or a <footer>.
         - Also do not include any <script> or <style> tags, this includes no inline-styling.
         - If you don't know how to create valid HTML tags, try anyway.
-        - Additionally make sure to wrap only the <body> </bod> html part in an <ai-reponse> tag.
+        - Additionally make sure to wrap only the <body> </body> html part in an <ai-reponse> tag.
         These formatting requirements are very important for visually-impaired users.
         Thus, I deeply rely on the correct structure.`
       )
       finalMessages[finalMessages.length - 1].content = lastMessage.content
-      console.log('The final message with prompt improvement is: ', lastMessage.content)
     }
 
     console.log('The following messages are being sent:\n')
     console.log(finalMessages)
 
-    console.log('The final message to complete is the following:\n', finalMessages[finalMessages.length - 1])
     let streaming = true
-    const response = await askOpenAI(finalMessages, streaming, bestModel)
+    const response = await askOpenAI(finalMessages, streaming)
 
     const stream = OpenAIStream(response, {
       onFinal() {

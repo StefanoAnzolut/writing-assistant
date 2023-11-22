@@ -450,36 +450,36 @@ function insertParagraphWise(paragraphs: string[]) {
   }
 }
 
-const decodeHtmlCharCodes = str =>
-  str.replace(/(&#(\d+);)/g, (match, capture, charCode) => String.fromCharCode(charCode))
+function decodeHtmlCharCodes(str: string): string {
+  return str.replace(/(&#(\d+);)/g, (match, capture, charCode) => String.fromCharCode(charCode))
+}
 
-const decodeHtmlCode = str =>
-  str
+function decodeHtmlCode(str: string): string {
+  return str
     .replace(/&amp;/g, '&')
     .replace(/&gt;/g, '>')
     .replace(/&lt;/g, '<')
     .replace(/&quot;/g, '"')
     .replace(/&nbsp;/g, ' ')
+}
+
+function removeHtmlTagsAndWhitespace(str: string): string[] {
+  return str
+    .split(/<[^>]*>/)
+    .filter(Boolean)
+    .filter(text => text !== ' ')
+    .filter(text => text !== '\n')
+    .filter(text => text !== '\n\n')
+    .filter(text => text !== '\t\n')
+}
 
 function insertHTMLParagraphWise(assistantResponse: string) {
   editorContent.value = decodeHtmlCode(decodeHtmlCharCodes(editorContent.value))
   selectedText.value = decodeHtmlCode(decodeHtmlCharCodes(selectedText.value))
   console.log('edConVal', editorContent.value)
   console.log('selText', selectedText.value)
-  const selectedTextInnerContent = selectedText.value
-    .split(/<[^>]*>/)
-    .filter(Boolean)
-    .filter(text => text !== ' ')
-    .filter(text => text !== '\n')
-    .filter(text => text !== '\n\n')
-    .filter(text => text !== '\t\n')
-  const assistantResponseInnerContent = assistantResponse
-    .split(/<[^>]*>/)
-    .filter(Boolean)
-    .filter(text => text !== ' ')
-    .filter(text => text !== '\n')
-    .filter(text => text !== '\n\n')
-    .filter(text => text !== '\t\n')
+  const selectedTextInnerContent = removeHtmlTagsAndWhitespace(selectedText.value)
+  const assistantResponseInnerContent = removeHtmlTagsAndWhitespace(assistantResponse)
   if (selectedTextInnerContent.length !== assistantResponseInnerContent.length) {
     console.log('assistantResponseInnerContent', assistantResponseInnerContent)
     console.log('selectedTextInnerContent', selectedTextInnerContent)
