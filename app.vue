@@ -27,6 +27,7 @@ const { messages, input, handleSubmit } = useChat({
 
 /** Session chat history between the user and the writing partner */
 const chatHistory: ChatHistory = reactive({ messages: [] as ChatMessage[] })
+const messageInteractionCounter = ref(0)
 
 /** Shared editor content between the user and the writing partner */
 const editorContent = ref('')
@@ -90,10 +91,6 @@ function submit(e: any): void {
     input.value = input.value.concat(selectedText.value)
   }
   handleSubmit(e)
-  waitForAssistant().then(assistantResponse => {
-    setResponse(assistantResponse)
-    playResponse(getLastAssistantResponseIndex())
-  })
 }
 
 /** Submission wrapper for the callback action of the context menu */
@@ -145,10 +142,10 @@ function isFinished(message: string) {
   return message.includes('2:"[{\\"done\\":true}]"')
 }
 
-function addPrefixToContent(index, latestMessage) {
+function addPrefixToContent(latestMessage) {
   return latestMessage.role === 'user'
-    ? `Prompt ${index}\n${latestMessage.content}`
-    : `Answer ${index}\n${latestMessage.content}`
+    ? `Prompt ${messageInteractionCounter.value}\n${latestMessage.content}`
+    : `Answer ${messageInteractionCounter.value}\n${latestMessage.content}`
 }
 
 function removeCallbackActionPrefix(content: string): string {
@@ -170,11 +167,14 @@ function removeCallbackActionPrefix(content: string): string {
 
 function addToChatHistory(message: Message) {
   message.content = removeCallbackActionPrefix(message.content)
+  if (message.role === 'user') {
+    messageInteractionCounter.value++
+  }
   chatHistory.messages.push({
     message: {
       id: Date.now().toString(),
       role: message.role,
-      content: addPrefixToContent(chatHistory.messages.length + 1, message),
+      content: addPrefixToContent(message),
       new: true,
     },
     audioPlayer: { player: new speechsdk.SpeakerAudioDestination(), muted: true, alreadyPlayed: false },
@@ -250,7 +250,7 @@ watch(messages, (_): void => {
     }, 3000)
     return
   }
-  checkHTMLInResponse(addPrefixToContent(getChatHistoryLength(), message))
+  checkHTMLInResponse(addPrefixToContent(message))
   if (entry.message.content.length > 25 && entry.message.new === true) {
     entry.message.new = false
     if (entry.message.content.includes('<ai-response>') || entry.message.content.includes('<body>')) {
@@ -510,16 +510,6 @@ function getLastAssistantResponseIndex(): number {
   }
   return lastAssistantResponseIndex
 }
-function getLastUserResponseIndex(): number {
-  if (messages.value.length === 0) {
-    throw new Error('Cannot get index when there is no message!')
-  }
-  let lastUserResponseIndex = messages.value.length - 1
-  while (messages.value[lastUserResponseIndex].role !== 'user' && lastUserResponseIndex > 0) {
-    lastUserResponseIndex--
-  }
-  return lastUserResponseIndex
-}
 
 function getAudioPlayer(index: number): AudioPlayer {
   return chatHistory.messages[index].audioPlayer
@@ -667,19 +657,6 @@ async function focusPauseButton() {
   if (playPauseButton) {
     playPauseButton.focus()
   }
-}
-
-function repeatLastQuestion() {
-  if (messages.value.length === 0) {
-    return
-  }
-  let lastUserReponseIndex = getLastUserResponseIndex()
-  input.value = messages.value[lastUserReponseIndex].content
-  handleSubmit(new Event('submit'))
-  waitForAssistant().then(assistantResponse => {
-    setResponse(assistantResponse)
-    playResponse(getLastAssistantResponseIndex())
-  })
 }
 
 function removeHtmlTags(content: string) {
