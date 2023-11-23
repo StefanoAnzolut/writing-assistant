@@ -60,6 +60,9 @@ const prevAudioPlayer = ref({} as AudioPlayer)
 const readAloudAudioPlayer = ref({} as AudioPlayer)
 const showReadAloudAudioPlayer = ref({ show: false })
 
+const HTML_EXTRACTION_PLACEHOLDER =
+  '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor] .'
+
 /** Load and set editor from proxy file server,
  *  as there were several issues with providing static files via Nuxt.
  * TODO: Improve how the text editor is loaded */
@@ -151,11 +154,11 @@ function addPrefixToContent(index, latestMessage) {
 function removeCallbackActionPrefix(content: string): string {
   if (
     content.includes(
-      'the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n'
+      'the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n'
     )
   ) {
     content = content.replace(
-      'the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
+      'the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
       ''
     )
   }
@@ -283,17 +286,17 @@ function replaceExpression(assistantResponse: string, expression: RegExp) {
   // const expression = /<ai-response>([\s\S]*?)<\/ai-response>/
   const match = assistantResponse.match(expression)
   if (match && match[1]) {
-    htmlCode.value = match[1]
+    console.log('HTML includes whitespace?', match[1])
+    htmlCode.value = match[1].replace(/>\s+</g, '><')
+    console.log('Does this HTML still include whitespace?', htmlCode.value)
+    // htmlCode.value = match[1]
   }
   const parts = assistantResponse.split(expression)
   if (parts.length === 1) {
     // Special case, where assistant response tag is included in response but the regex does not match
     setResponse(assistantResponse)
   } else {
-    parts[1] = parts[1].replace(
-      match[1],
-      '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor] .'
-    )
+    parts[1] = parts[1].replace(match[1], HTML_EXTRACTION_PLACEHOLDER)
   }
   const textWithoutHtml = parts.join('')
   setResponse(textWithoutHtml)
@@ -302,12 +305,7 @@ function replaceExpression(assistantResponse: string, expression: RegExp) {
 function checkHTMLInResponse(assistantResponse: string) {
   if (assistantResponse.includes('<ai-response>')) {
     replaceExpression(assistantResponse, /<ai-response>([\s\S]*?)<\/ai-response>/)
-  } else if (
-    assistantResponse.includes('```html') ||
-    assistantResponse.includes(
-      '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor] .'
-    )
-  ) {
+  } else if (assistantResponse.includes('```html') || isHtmlAlreadyExtracted(assistantResponse)) {
     replaceExpression(assistantResponse, /```html([\s\S]*?)```/)
   } else if (assistantResponse.includes('<body>')) {
     // Special case where html tags and ai-response tags are both missing
@@ -419,25 +417,6 @@ function IsInlineModification(action: string) {
   return modifcationActions.includes(action)
 }
 
-function insertHTML(assistantResponse: string): boolean {
-  if (
-    assistantResponse.includes(
-      '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor] .'
-    )
-  ) {
-    // removing additional line breaks
-    htmlCode.value = htmlCode.value.replace('<br>', '')
-    editorContent.value = editorContent.value.concat(htmlCode.value)
-    return true
-  }
-  // Special case where html is not identified correctly
-  if (assistantResponse.toLowerCase().includes('html')) {
-    editorContent.value = editorContent.value.concat(assistantResponse)
-    return true
-  }
-  return false
-}
-
 function insertParagraphWise(paragraphs: string[]) {
   for (const paragraph of paragraphs) {
     paragraph.trim()
@@ -463,50 +442,12 @@ function decodeHtmlCode(str: string): string {
     .replace(/&nbsp;/g, ' ')
 }
 
-function removeHtmlTagsAndWhitespace(str: string): string[] {
-  return str
-    .split(/<[^>]*>/)
-    .filter(Boolean)
-    .filter(text => text !== ' ')
-    .filter(text => text !== '\n')
-    .filter(text => text !== '\n\n')
-    .filter(text => text !== '\t\n')
+function isHtmlAlreadyExtracted(assistantResponse: string): boolean {
+  return assistantResponse.includes(HTML_EXTRACTION_PLACEHOLDER)
 }
 
-function insertHTMLParagraphWise(assistantResponse: string) {
-  editorContent.value = decodeHtmlCode(decodeHtmlCharCodes(editorContent.value))
-  selectedText.value = decodeHtmlCode(decodeHtmlCharCodes(selectedText.value))
-  console.log('edConVal', editorContent.value)
-  console.log('selText', selectedText.value)
-  const selectedTextInnerContent = removeHtmlTagsAndWhitespace(selectedText.value)
-  const assistantResponseInnerContent = removeHtmlTagsAndWhitespace(assistantResponse)
-  if (selectedTextInnerContent.length !== assistantResponseInnerContent.length) {
-    console.log('assistantResponseInnerContent', assistantResponseInnerContent)
-    console.log('selectedTextInnerContent', selectedTextInnerContent)
-    console.log('Length of assistantResponseInnerContent and selectedTextInnerContent is not equal!')
-    assistantResponseInnerContent.forEach(element => {
-      editorContent.value = editorContent.value.concat(element)
-    })
-    synthesizeSpeech("Couldn't find selection pasting content to end of text editor", -1)
-    return
-  }
-  synthesizeSpeech('Modified the selected content directly.', -1)
-  for (let i = 0; i < assistantResponseInnerContent.length; i++) {
-    console.log('selectedTextInnerContent[i]', selectedTextInnerContent[i])
-    console.log('assistantResponseInnerContent[i]', assistantResponseInnerContent[i])
-    // Complete HTML is already extracted as it was provided in the assistantResponse. We just need to replace the selected text with the HTML stored in htmlCode.value
-    if (
-      assistantResponseInnerContent[i].includes(
-        '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor]'
-      )
-    ) {
-      editorContent.value = editorContent.value.replace(selectedTextInnerContent[i], htmlCode.value)
-    }
-
-    editorContent.value = editorContent.value.replace(selectedTextInnerContent[i], assistantResponseInnerContent[i])
-    console.log('FINAL editorContent.value', editorContent.value)
-  }
-  selectedText.value = ''
+function decodeHtml(str: string): string {
+  return decodeHtmlCode(decodeHtmlCharCodes(str))
 }
 
 function paste(index: number) {
@@ -514,16 +455,37 @@ function paste(index: number) {
   if (!matchPrefix) {
     return
   }
-  let assistantResponse = matchPrefix[2]
+  let textToPaste = matchPrefix[2]
+  const isHtml = isHtmlAlreadyExtracted(textToPaste)
+  if (isHtml) {
+    textToPaste = htmlCode.value
+  }
+
   if (IsInlineModification(lastContextMenuAction.value) && selectedText.value !== '') {
-    insertHTMLParagraphWise(assistantResponse)
+    editorContent.value = decodeHtml(editorContent.value)
+    selectedText.value = decodeHtml(selectedText.value)
+
+    const replacementText = isHtml ? htmlCode.value : textToPaste
+    editorContent.value = editorContent.value.replace(/>\s+</g, '><').replace(selectedText.value, replacementText)
+
+    if (editorContent.value.includes(replacementText)) {
+      synthesizeSpeech('Modified the selected content directly.', -1)
+    } else {
+      synthesizeSpeech("Couldn't find selection pasting content to end of text editor", -1)
+      editorContent.value += replacementText
+    }
+    selectedText.value = ''
     return
   }
+
   synthesizeSpeech('Pasted to the text editor.', -1)
-  if (insertHTML(assistantResponse)) {
+  if (isHtml || textToPaste.toLowerCase().includes('html')) {
+    // Special case where html is not identified correctly
+    editorContent.value += isHtml ? htmlCode.value.replace('<br>', '') : textToPaste
     return
   }
-  insertParagraphWise(matchPrefix[2].split('\n'))
+
+  insertParagraphWise(textToPaste.split('\n'))
 }
 
 function getLastAssistantResponse(): string {

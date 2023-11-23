@@ -8,37 +8,37 @@ export const actions = [
     name: 'checkSpelling',
     label: 'Spell check',
     prompt:
-      '[MODIFICATION_REQUEST]: Spell check\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
+      '[MODIFICATION_REQUEST]: Spell check\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
   },
   {
     name: 'summarize',
     label: 'Summarize',
     prompt:
-      '[MODIFICATION_REQUEST]: Summarize\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
+      '[MODIFICATION_REQUEST]: Summarize\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
   },
   {
     name: 'simplify',
     label: 'Simplify',
     prompt:
-      '[MODIFICATION_REQUEST]: Simplify\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
+      '[MODIFICATION_REQUEST]: Simplify\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
   },
   {
     name: 'findSynonyms',
     label: 'Find synonyms',
     prompt:
-      '[MODIFICATION_REQUEST]: Find synonyms\n for the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
+      '[MODIFICATION_REQUEST]: Find synonyms\n for the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
   },
   {
     name: 'reformulate',
     label: 'Formulate differently',
     prompt:
-      '[MODIFICATION_REQUEST]: Reformulate\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
+      '[MODIFICATION_REQUEST]: Reformulate the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
   },
   {
     name: 'concise',
     label: 'Make more concise',
     prompt:
-      '[MODIFICATION_REQUEST]: Make concise\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
+      '[MODIFICATION_REQUEST]: Make concise\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
   },
   {
     name: 'addStructure',
@@ -54,7 +54,7 @@ export const actions = [
     name: 'adaptToScientificStyle',
     label: 'Reformulate to scientific style',
     prompt:
-      '[MODIFICATION_REQUEST]: Adapt to scientific style \n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n',
+      '[MODIFICATION_REQUEST]: Adapt to scientific style \n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
   },
   {
     name: 'askQuestion',
