@@ -80,6 +80,13 @@ function onNamespaceLoaded() {
     registerActions(ck.editor, submitSelectedCallback)
     removeFormElementRoles()
   })
+  // Element is not yet available, so we need to wait a bit (50 ms should be enough)
+  setTimeout(() => {
+    let textAreaElements = document.getElementsByClassName('cke_contents cke_reset')
+    for (let i = 0; i < textAreaElements.length; i++) {
+      textAreaElements[i].setAttribute('style', 'height: 82vh !important;')
+    }
+  }, 50)
 }
 
 /** Text completion submission wrapper */
@@ -815,7 +822,7 @@ https://stackoverflow.com/questions/62107074/how-to-hide-a-text-and-make-it-acce
   border: #ccced1 1px solid;
   display: flex;
   flex-direction: column;
-  max-height: 50vh;
+  height: 90vh;
   overflow-y: scroll;
 }
 .chat-message {
@@ -849,17 +856,6 @@ https://stackoverflow.com/questions/62107074/how-to-hide-a-text-and-make-it-acce
     0 20px 25px -5px rgba(0, 0, 0, 0.1),
     0 10px 10px -5px rgba(0, 0, 0, 0.04);
   font-size: smaller;
-}
-.stt {
-  border: 3px solid;
-  border-color: #000000;
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
-  padding-top: 1rem;
-  padding-bottom: 1rem;
-  border-radius: 0.5rem;
-  border-width: 1px;
-  filter: drop-shadow(0 0 0.75rem #d1d5db);
 }
 .no-uppercase {
   text-transform: unset !important;
