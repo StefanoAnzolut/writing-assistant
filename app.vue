@@ -9,16 +9,16 @@ import { removeFormElementRoles } from './utils/CKEditor'
 import type { AudioPlayer } from './models/AudioPlayer'
 import type { ChatMessage } from './models/ChatMessage'
 import { pause, replayAudio } from './composables/audio-player'
+import type { Audio } from 'openai/resources'
 
 useHead({
   title: 'Writing Partner',
   meta: [{ name: 'An AI-powered writing partner' }],
 })
 
-// onMounted(() => {
-//   console.log('mounted!')
-//   // document.body.style.backgroundColor = '#36454F'
-// })
+onMounted(() => {
+  document.body.style.backgroundColor = '#ebeae6'
+})
 const { messages, input, handleSubmit } = useChat({
   headers: { 'Content-Type': 'application/json' },
 })
@@ -84,9 +84,9 @@ function onNamespaceLoaded() {
   setTimeout(() => {
     let textAreaElements = document.getElementsByClassName('cke_contents cke_reset')
     for (let i = 0; i < textAreaElements.length; i++) {
-      textAreaElements[i].setAttribute('style', 'height: 82vh !important;')
+      textAreaElements[i].setAttribute('style', 'height: 76vh !important;')
     }
-  }, 50)
+  }, 100)
 }
 
 /** Text completion submission wrapper */
@@ -124,6 +124,7 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     return
   } else if (prompt === 'READ') {
     synthesizeSpeech(selectedTextFromEditor.replace(/<[^>]*>/g, '\n'), -2)
+    removeSelection()
     return
   }
   input.value = input.value.concat(prompt + selectedTextFromEditor)
@@ -136,6 +137,10 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     setResponse(assistantResponse)
     playResponse(getLastAssistantResponseIndex())
   })
+}
+
+function removeSelection() {
+  selectedText.value = ''
 }
 
 /** As we have modified the chat reponse to include the finish_reason to mark the end of the stream. We need to have some pre-processing. */
@@ -200,10 +205,6 @@ function getLastEntryIndex() {
   return chatHistory.messages.length - 1
 }
 
-function getChatHistoryLength() {
-  return chatHistory.messages.length
-}
-
 // TODO: Why do I need this when asking a question from the text editor to the assistant
 // As the messages are not appendend to the chat history
 
@@ -253,7 +254,7 @@ watch(messages, (_): void => {
         let tempEntry = getLastEntry()
         tempEntry.message.new = false
       }
-      focusPauseButton()
+      focusPauseButton(getLastAssistantResponseIndex())
     }, 3000)
     return
   }
@@ -283,7 +284,7 @@ watch(responseFinished, (_): void => {
       addToVoiceResponse(chatHistory.messages[chatHistory.messages.length - 1].message.content)
       voiceSynthesisStartOver.value = true
       synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
-      focusPauseButton()
+      focusPauseButton(getLastAssistantResponseIndex())
       return
     }
   }
@@ -293,10 +294,7 @@ function replaceExpression(assistantResponse: string, expression: RegExp) {
   // const expression = /<ai-response>([\s\S]*?)<\/ai-response>/
   const match = assistantResponse.match(expression)
   if (match && match[1]) {
-    console.log('HTML includes whitespace?', match[1])
     htmlCode.value = match[1].replace(/>\s+</g, '><')
-    console.log('Does this HTML still include whitespace?', htmlCode.value)
-    // htmlCode.value = match[1]
   }
   const parts = assistantResponse.split(expression)
   if (parts.length === 1) {
@@ -481,7 +479,7 @@ function paste(index: number) {
       synthesizeSpeech("Couldn't find selection pasting content to end of text editor", -1)
       editorContent.value += replacementText
     }
-    selectedText.value = ''
+    removeSelection()
     return
   }
 
@@ -532,10 +530,11 @@ async function focusReadAloudPauseButton() {
   }
 }
 
-async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
-  if (textToSpeak === '') {
-    return
-  }
+function newAudioPlayer(): AudioPlayer {
+  return { player: new speechsdk.SpeakerAudioDestination(), muted: true, alreadyPlayed: false }
+}
+
+async function setupSpeechConfig(): Promise<speechsdk.SpeechConfig> {
   const tokenObj = await getTokenOrRefresh()
   const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
   /** Leni & Jan für CH. Alle weiteren findet man hier: https://speech.microsoft.com/portal/voicegallery */
@@ -546,80 +545,49 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
     speechConfig.speechSynthesisLanguage = 'en-GB'
     speechConfig.speechSynthesisVoiceName = `en-GB-${selectedSpeaker.value}Neural`
   }
-  let newAudioPlayer = {
-    player: new speechsdk.SpeakerAudioDestination(),
-    muted: true,
-    alreadyPlayed: false,
-  }
-  if (audioPlayerIndex !== -1 && audioPlayerIndex !== -2) {
-    let audioPlayer = getAudioPlayer(audioPlayerIndex)
-    prevAudioPlayer.value = audioPlayer
-    // audioPlayer.player.pause()
-    audioPlayer = {
-      player: new speechsdk.SpeakerAudioDestination(),
-      muted: true,
-      alreadyPlayed: false,
-    }
-    audioPlayer.player.onAudioEnd = audioPlayer => {
-      audioPlayer.pause()
-      chatHistory.messages[audioPlayerIndex].audioPlayer.muted = true
-      chatHistory.messages[audioPlayerIndex].audioPlayer.alreadyPlayed = true
-    }
-    audioPlayer.player.onAudioStart = () => {
-      prevAudioPlayer.value.player.pause()
-      let currentTime = prevAudioPlayer.value.player.currentTime
-      if (currentTime !== -1 && !voiceSynthesisStartOver.value) {
-        // round to 2 decimal places
-        audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
-      }
-      if (voiceSynthesisStartOver.value) {
-        voiceSynthesisStartOver.value = false
-      }
-      chatHistory.messages[audioPlayerIndex].audioPlayer.muted = false
-      focusPauseButton()
-    }
-    newAudioPlayer.player = audioPlayer.player
-    chatHistory.messages[audioPlayerIndex].audioPlayer = newAudioPlayer
-  } else if (audioPlayerIndex === -2) {
-    let audioPlayer = {
-      player: new speechsdk.SpeakerAudioDestination(),
-      muted: true,
-      alreadyPlayed: false,
-    }
-    audioPlayer.player.onAudioEnd = audioPlayer => {
-      audioPlayer.pause()
-      readAloudAudioPlayer.value.muted = true
-      readAloudAudioPlayer.value.alreadyPlayed = true
-      showReadAloudAudioPlayer.value.show = false
-    }
-    audioPlayer.player.onAudioStart = () => {
-      readAloudAudioPlayer.value.muted = false
-    }
-    newAudioPlayer.player = audioPlayer.player
-    readAloudAudioPlayer.value = newAudioPlayer
-  }
+  return speechConfig
+}
 
-  console.log('synthesizing text')
-  const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(newAudioPlayer.player)
+async function synthesizeSpeech(text: string, index: number) {
+  if (text === '') {
+    return
+  }
+  let audioPlayer = newAudioPlayer()
+  if (index !== -1 && index !== -2) {
+    prevAudioPlayer.value = getAudioPlayer(index)
+    audioPlayer.player = configureAudioPlayer(index).player
+    chatHistory.messages[index].audioPlayer = audioPlayer
+  } else if (index === -2) {
+    readAloudAudioPlayer.value = configureReadAloudAudioPlayer(audioPlayer)
+  }
+  await speak(text, index, audioPlayer.player)
+}
+
+async function speak(textToSpeak: string, index: number, player: speechsdk.SpeakerAudioDestination): Promise<void> {
+  const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(player)
+  const speechConfig = await setupSpeechConfig()
   let synthesizer = new speechsdk.SpeechSynthesizer(speechConfig, audioConfig)
   // Events are raised as the output audio data becomes available, which is faster than playback to an output device.
   // We must must appropriately synchronize streaming and real-time.
+  console.log('synthesizing text')
   synthesizer.speakTextAsync(
     textToSpeak,
     result => {
       let text
       if (result.reason === speechsdk.ResultReason.SynthesizingAudioCompleted) {
-        if (
-          audioPlayerIndex !== -1 &&
-          audioPlayerIndex !== -2 &&
-          chatHistory.messages[audioPlayerIndex].message.role === 'user'
-        ) {
-          chatHistory.messages[audioPlayerIndex].audioPlayer.player.pause()
-          chatHistory.messages[audioPlayerIndex].audioPlayer.muted = true
-        }
-        if (audioPlayerIndex === -2) {
+        if (index === -1) {
+          // no additional action required for direct responses
+        } else if (index === -2) {
           showReadAloudAudioPlayer.value.show = true
           focusReadAloudPauseButton()
+        } else if (chatHistory.messages[index].message.role === 'user') {
+          // no additional action required for user prompts
+        } else if (chatHistory.messages[index].message.role === 'assistant') {
+          if (chatHistory.messages[index - 1].audioPlayer.muted === false) {
+            // Pause the assistant until the user has finished listening to the prompt
+            chatHistory.messages[index].audioPlayer.player.pause()
+            chatHistory.messages[index].audioPlayer.muted = true
+          }
         }
         text = `synthesis finished for "${textToSpeak}".\n`
         // focusPauseButton()
@@ -634,6 +602,58 @@ async function synthesizeSpeech(textToSpeak: string, audioPlayerIndex: number) {
       synthesizer.close()
     }
   )
+}
+
+function configureAudioPlayer(index: number): AudioPlayer {
+  let audioPlayer = newAudioPlayer()
+
+  audioPlayer.player.onAudioEnd = audioPlayer => {
+    audioPlayer.pause()
+    chatHistory.messages[index].audioPlayer.muted = true
+    chatHistory.messages[index].audioPlayer.alreadyPlayed = true
+
+    // play assistant response after reading the user prompt
+    if (
+      chatHistory.messages[index + 1] &&
+      chatHistory.messages[index + 1].message.role === 'assistant' &&
+      !chatHistory.messages[index + 1].audioPlayer.alreadyPlayed
+    ) {
+      let nextAudioPlayer = getAudioPlayer(index + 1)
+      if (nextAudioPlayer.alreadyPlayed === false) {
+        nextAudioPlayer.player.resume()
+        nextAudioPlayer.muted = false
+        focusPauseButton(index + 1)
+      }
+    }
+  }
+
+  audioPlayer.player.onAudioStart = () => {
+    prevAudioPlayer.value.player.pause()
+    let currentTime = prevAudioPlayer.value.player.currentTime
+    if (currentTime !== -1 && !voiceSynthesisStartOver.value) {
+      // round to 2 decimal places
+      audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
+    }
+    if (voiceSynthesisStartOver.value) {
+      voiceSynthesisStartOver.value = false
+    }
+    chatHistory.messages[index].audioPlayer.muted = false
+    focusPauseButton(index)
+  }
+  return audioPlayer
+}
+
+function configureReadAloudAudioPlayer(newlyAudioPlayer: AudioPlayer): AudioPlayer {
+  newlyAudioPlayer.player.onAudioEnd = audioPlayer => {
+    audioPlayer.pause()
+    readAloudAudioPlayer.value.muted = true
+    readAloudAudioPlayer.value.alreadyPlayed = true
+    showReadAloudAudioPlayer.value.show = false
+  }
+  newlyAudioPlayer.player.onAudioStart = () => {
+    readAloudAudioPlayer.value.muted = false
+  }
+  return newlyAudioPlayer
 }
 
 function setResponse(response: string) {
@@ -654,13 +674,20 @@ async function playResponse(index: number) {
       voiceSynthesisOnce.value = true
     }
   }
-  focusPauseButton()
+  focusPauseButton(index)
 }
 
-async function focusPauseButton() {
+async function focusPauseButton(index: number) {
+  if (index < 0) {
+    return
+  }
+  if (chatHistory.messages[index].message.role === 'assistant' && !chatHistory.messages[index - 1].audioPlayer.muted) {
+    return
+  }
+
   await nextTick()
   // nextTick() to update DOM and show Overlay before focusing on the pause button
-  let playPauseButton = document.getElementById('playPauseButton' + getLastAssistantResponseIndex())
+  let playPauseButton = document.getElementById('playPauseButton' + index)
   if (playPauseButton) {
     playPauseButton.focus()
   }
@@ -705,48 +732,7 @@ function removeHtmlTags(content: string) {
                   />
                 </div>
               </form>
-              <div
-                v-for="(entry, i) in chatHistory.messages"
-                :index="i"
-                key="m.id"
-                class="chat-message"
-                :class="chatHistory.messages[i].message.role === 'user' ? 'user-message' : 'assistant-message'"
-              >
-                <div class="chat-inner">
-                  <h2 class="aria-invisible" v-if="entry.message.role === 'user'">
-                    {{ removeHtmlTags(entry.message.content.substring(0, 50)) }}
-                  </h2>
-                  <p class="h3-style" v-if="entry.message.role === 'user'">
-                    {{ removeHtmlTags(entry.message.content) }}
-                  </p>
-                  <h3 v-if="entry.message.role === 'assistant'">
-                    {{ removeHtmlTags(entry.message.content) }}
-                  </h3>
-                </div>
-                <v-container class="d-flex flex-row justify-end">
-                  <v-btn
-                    :id="'playPauseButton' + i"
-                    :icon="entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
-                    class="ma-1"
-                    color="success"
-                    @click="pause(entry.audioPlayer)"
-                    :aria-label="entry.audioPlayer.muted ? 'Play' : 'Pause'"
-                    size="small"
-                  >
-                  </v-btn>
-                  <v-btn
-                    :id="'addToChatEditor' + i"
-                    icon="mdi-content-paste"
-                    class="ma-1"
-                    color="primary"
-                    @click="paste(i)"
-                    aria-label="Add to chat editor"
-                    size="small"
-                    v-if="entry.message.role === 'assistant'"
-                  >
-                  </v-btn>
-                </v-container>
-              </div>
+              <chat-messages :messages="chatHistory.messages" @paste="paste" />
               <!-- <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion"> Repeat last question</v-btn> -->
             </div>
           </div>
@@ -784,28 +770,6 @@ function removeHtmlTags(content: string) {
 </template>
 
 <style scoped>
-.hide-prompt-heading {
-  visibility: hidden;
-}
-/* Somehow, visibility hidden lead to inconsitent reading order for screen readers.
-https://stackoverflow.com/questions/62107074/how-to-hide-a-text-and-make-it-accessible-by-screen-reader */
-.aria-invisible {
-  border: 0;
-  clip: rect(0 0 0 0);
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  padding: 0;
-  position: absolute;
-  width: 1px;
-}
-
-.h3-style {
-  font-size: 1.17em;
-  margin-inline-start: 0px;
-  margin-inline-end: 0px;
-  font-weight: bold;
-}
 .card-title {
   display: block;
   font-size: 1.5em;
@@ -822,27 +786,11 @@ https://stackoverflow.com/questions/62107074/how-to-hide-a-text-and-make-it-acce
   border: #ccced1 1px solid;
   display: flex;
   flex-direction: column;
-  height: 90vh;
+  height: 84vh;
   overflow-y: scroll;
 }
-.chat-message {
-  white-space: pre-wrap;
-  border-top: #ccced1 1px solid;
-  display: block;
-  margin-block-end: 0.5em;
-  margin-inline-start: 0px;
-  margin-inline-end: 0px;
-  font-size: smaller;
-}
-.chat-inner {
-  padding: 0.5rem;
-}
-
-.user-message {
-  background-color: #ffe79f;
-}
-.assistant-message {
-  background-color: #cf9fff;
+.input {
+  border-bottom: #ccced1 2px solid;
 }
 .chat-input {
   padding: 0.5rem;
