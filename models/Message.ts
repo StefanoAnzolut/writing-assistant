@@ -4,5 +4,6 @@ export interface Message {
   content: string
   role: 'system' | 'user' | 'assistant' | 'function'
   name?: string
-  new: boolean
+  new?: boolean
+  html?: string
 }

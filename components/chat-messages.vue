@@ -10,8 +10,34 @@ const props = defineProps({
 })
 defineEmits(['paste'])
 
+const isShowHtml = ref(false)
+
+const HTML_EXTRACTION_PLACEHOLDER =
+  '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor] .'
+
 function removeHtmlTags(content: string) {
   return content.replace(/<[^>]*>/g, '')
+}
+
+function showHtml(entry: ChatMessage) {
+  return isShowHtml.value && entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER)
+}
+
+async function expand(index: number) {
+  isShowHtml.value = true
+  await nextTick()
+  const collapseButton = document.getElementById('collapseButton' + index)
+  if (collapseButton) {
+    collapseButton.focus()
+  }
+}
+async function collapse(index: number) {
+  isShowHtml.value = false
+  await nextTick()
+  const expandButton = document.getElementById('expandButton' + index)
+  if (expandButton) {
+    expandButton.focus()
+  }
 }
 </script>
 <template>
@@ -34,12 +60,43 @@ function removeHtmlTags(content: string) {
       </p>
       <h3 v-if="entry.message.role === 'assistant'">
         {{ removeHtmlTags(entry.message.content.substring(0, 8)) }}
-        <span class="regular-font-weight">
+        <span class="regular-font-weight" v-if="showHtml(entry)">
+          {{ entry.message.html }}
+        </span>
+        <span class="regular-font-weight" v-else>
           {{ removeHtmlTags(entry.message.content.substring(8)) }}
         </span>
       </h3>
     </div>
     <v-container class="d-flex flex-row justify-end">
+      <v-btn
+        v-if="
+          showHtml(entry) &&
+          entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) &&
+          entry.message.role === 'assistant'
+        "
+        :id="'collapseButton' + i"
+        icon="mdi-chevron-up"
+        class="ma-1"
+        color="primary"
+        aria-label="Collapse structure for this answer"
+        @click="collapse(i)"
+        size="small"
+      ></v-btn>
+      <v-btn
+        v-if="
+          !showHtml(entry) &&
+          entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) &&
+          entry.message.role === 'assistant'
+        "
+        :id="'expandButton' + i"
+        icon="mdi-chevron-down"
+        class="ma-1"
+        color="primary"
+        aria-label="Expand structure for this answer"
+        @click="expand(i)"
+        size="small"
+      ></v-btn>
       <v-btn
         :id="'playPauseButton' + i"
         :icon="entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
@@ -90,10 +147,10 @@ https://stackoverflow.com/questions/62107074/how-to-hide-a-text-and-make-it-acce
 }
 
 .user-message {
-  background-color: #ffefbe;
+  background-color: #c5cae9;
 }
 .assistant-message {
-  background-color: #e4caff;
+  background-color: #e8eaf6;
 }
 .regular-font-weight {
   font-weight: normal;

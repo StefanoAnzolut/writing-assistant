@@ -8,8 +8,8 @@ import type { ChatHistory } from './models/ChatHistory'
 import { removeFormElementRoles } from './utils/CKEditor'
 import type { AudioPlayer } from './models/AudioPlayer'
 import type { ChatMessage } from './models/ChatMessage'
+import type { Session } from './models/Session'
 import { pause, replayAudio } from './composables/audio-player'
-import type { Audio } from 'openai/resources'
 
 useHead({
   title: 'Writing Partner',
@@ -17,13 +17,31 @@ useHead({
 })
 
 onMounted(() => {
-  document.body.style.backgroundColor = '#ebeae6'
+  sessions.value = JSON.parse(localStorage.getItem('sessions') || '[]')
+  loadActiveSession()
+  setInterval(() => {
+    storeSession(getActiveSession())
+  }, 60000)
+  window.addEventListener('keydown', keyDownHandler)
 })
-const { messages, input, handleSubmit } = useChat({
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', keyDownHandler)
+})
+const { messages, input, handleSubmit, setMessages } = useChat({
   headers: { 'Content-Type': 'application/json' },
 })
 
 // Maybe useCompletion might be interesting in the future
+
+/** LoadActiveSession */
+const sessionLoading = ref(false)
+
+/** Sidebar */
+const drawer = ref(false)
+
+/** Sessions */
+const sessions = ref([{} as Session])
+const activeSession = ref({ id: '', chatHistory: {} as ChatHistory, editorContent: '' } as Session)
 
 /** Session chat history between the user and the writing partner */
 const chatHistory: ChatHistory = reactive({ messages: [] as ChatMessage[] })
@@ -64,6 +82,10 @@ const showReadAloudAudioPlayer = ref({ show: false })
 const HTML_EXTRACTION_PLACEHOLDER =
   '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor] .'
 
+const editor = ref({} as any)
+const readOnly = ref(false)
+const editorToolbarAria = ref([])
+
 /** Load and set editor from proxy file server,
  *  as there were several issues with providing static files via Nuxt.
  * TODO: Improve how the text editor is loaded */
@@ -79,6 +101,8 @@ function onNamespaceLoaded() {
     ck.editor.removeMenuItem('paste')
     registerActions(ck.editor, submitSelectedCallback)
     removeFormElementRoles()
+    removeToolBarAriaLabels()
+    editor.value = ck.editor
   })
   // Element is not yet available, so we need to wait a bit (50 ms should be enough)
   setTimeout(() => {
@@ -87,6 +111,146 @@ function onNamespaceLoaded() {
       textAreaElements[i].setAttribute('style', 'height: 76vh !important;')
     }
   }, 100)
+}
+
+function removeToolBarAriaLabels() {
+  // TODO: Initial approach to decrease the amount of information in the toolbar as this is quite overwhelming
+  let allElements = document.getElementById('cke_1_toolbox')?.children
+  // if the element in allElements has an aria-labelledby attribute, remove it and store it in the ariaLabelledBy toolbar array
+  function removeAriaLabelledby(element) {
+    // Remove the 'aria-labelledby' attribute if it exists
+    if (element.hasAttribute('aria-labelledby')) {
+      element.removeAttribute('aria-labelledby')
+    }
+
+    // Get all child elements of the current element
+    let childElements = element.children
+
+    // Call removeAriaLabelledby on each child element
+    for (let i = 0; i < childElements.length; i++) {
+      removeAriaLabelledby(childElements[i])
+    }
+  }
+
+  // Call removeAriaLabelledby on each element in allElements
+  for (let i = 0; i < allElements.length; i++) {
+    removeAriaLabelledby(allElements[i])
+  }
+}
+
+function clearEditorContent() {
+  editorContent.value = ''
+}
+
+function toggleReadOnly(isReadOnly: boolean) {
+  if (isReadOnly) {
+    readOnly.value = false
+    editor.value.setReadOnly(readOnly.value)
+  } else {
+    readOnly.value = true
+    editor.value.setReadOnly(readOnly.value)
+  }
+  // Change the read-only state of the editor.
+  // https://ckeditor.com/docs/ckeditor4/latest/api/CKEDITOR_editor.html#method-setReadOnly
+}
+
+function getActiveSession(): Session {
+  if (sessions.value.length === 0) {
+    return {
+      id: Date.now().toString(),
+      chatHistory: { messages: [] as ChatMessage[] },
+      editorContent: '',
+    }
+  }
+  if (activeSession.value.id === '') {
+    return sessions.value[sessions.value.length - 1]
+  }
+  return {
+    id: activeSession.value.id,
+    chatHistory: chatHistory,
+    editorContent: editorContent.value,
+  }
+}
+
+function setActiveSession(id: string): void {
+  activeSession.value = getSession(id)
+  messageInteractionCounter.value = activeSession.value.chatHistory.messages.filter(
+    message => message.message.role === 'user'
+  ).length
+  chatHistory.messages = activeSession.value.chatHistory.messages
+  editorContent.value = activeSession.value.editorContent
+  sessionLoading.value = true
+  showDrawer(false)
+}
+
+function getSession(id: string): Session {
+  let session = sessions.value.find(session => session.id === id)
+  if (session) {
+    return session
+  }
+  throw new Error('Session not found')
+}
+
+function storeSession(session: Session) {
+  if (sessions.value.length === 0) {
+    sessions.value.push(session)
+  }
+  // find the session with the same id and replace it
+  sessions.value.forEach((s, i) => {
+    if (s.id === session.id) {
+      sessions.value[i] = session
+    }
+  })
+  localStorage.setItem('sessions', JSON.stringify(sessions.value))
+}
+
+function loadActiveSession() {
+  activeSession.value = getActiveSession()
+  messageInteractionCounter.value = activeSession.value.chatHistory.messages.filter(
+    message => message.message.role === 'user'
+  ).length
+  chatHistory.messages = activeSession.value.chatHistory.messages
+
+  if (chatHistory.messages.length > 0) {
+    messages.value = chatHistory.messages.map(message => {
+      delete message.message.new
+      return message.message
+    })
+  }
+  editorContent.value = activeSession.value.editorContent
+  sessionLoading.value = true
+}
+
+// TODO: Figure out how scrolling works properly for the ck4editor that is loaded in the iframe.
+// async function scrollToBottomTextEditor() {
+//   await nextTick()
+// let iframe = document.getElementsByTagName('iframe')[0]
+// iframe.contentWindow.scrollTo(0, iframe.contentDocument.body.scrollHeight)
+
+// var editor = CKEDITOR.instances.editor1
+// console.log(editor)
+// var doc = editor.document.$
+// console.log(doc)
+// console.log(doc.body)
+// let lastChild = doc.body.lastChild
+// console.log(lastChild)
+// lastChild.scrollIntoView()
+// setInterval(() => {
+
+// }, 1000)
+// iframe.bod
+
+// doc.scrollTop = (76 * window.innerHeight) / 100
+// }
+
+function keyDownHandler(event: KeyboardEvent) {
+  if (event.code === 'Escape') {
+    drawer.value = false
+  }
+
+  if (event.code === 'F10' && event.altKey) {
+    // now we go to the toolbar of the text editor
+  }
 }
 
 /** Text completion submission wrapper */
@@ -155,6 +319,10 @@ function isFinished(message: string) {
 }
 
 function addPrefixToContent(latestMessage) {
+  const matchPrefix = latestMessage.content.match(/Answer (\d+)\n([\s\S]*)/)
+  if (matchPrefix) {
+    return matchPrefix[2]
+  }
   return latestMessage.role === 'user'
     ? `Prompt ${messageInteractionCounter.value}\n${latestMessage.content}`
     : `Answer ${messageInteractionCounter.value}\n${latestMessage.content}`
@@ -212,6 +380,25 @@ function getLastEntryIndex() {
  * uses the editorContent for the shared state
  */
 watch(messages, (_): void => {
+  if (messages.value.length === 0) {
+    setMessages(chatHistory.messages.map(message => message.message))
+    // Somehow the following console log statement is required to set the messages appropriately
+    return
+  }
+  if (sessionLoading.value && chatHistory.messages.length !== 0) {
+    // Synchronize session chat with active chat
+    sessionLoading.value = false
+    return
+  }
+  if (chatHistory.messages.length === 0) {
+    // Empty chat on start up set session loading to false
+    sessionLoading.value = false
+  }
+
+  if (messages.value.length < chatHistory.messages.length) {
+    setMessages(chatHistory.messages.map(message => message.message))
+  }
+
   let message = messages.value[messages.value.length - 1]
   if (message.role === 'assistant') {
     message = preprocessMessage(message)
@@ -271,6 +458,12 @@ watch(messages, (_): void => {
 })
 watch(responseFinished, (_): void => {
   if (responseFinished.value) {
+    activeSession.value = {
+      id: activeSession.value.id,
+      chatHistory: chatHistory,
+      editorContent: editorContent.value,
+    }
+    storeSession(activeSession)
     // final run to finish the voice synthesis
     clearInterval(intervalId.value)
     responseFinished.value = false
@@ -290,11 +483,24 @@ watch(responseFinished, (_): void => {
   }
 })
 
+watch(readOnly, (_): void => {
+  if (editor.value) {
+    if (readOnly.value) {
+      let element = document.getElementById('cke_editor1_arialbl')
+      element.innerText = 'Read only text editor'
+    } else {
+      let element = document.getElementById('cke_editor1_arialbl')
+      element.innerText = 'Rich Text Editor'
+    }
+  }
+})
+
 function replaceExpression(assistantResponse: string, expression: RegExp) {
   // const expression = /<ai-response>([\s\S]*?)<\/ai-response>/
   const match = assistantResponse.match(expression)
   if (match && match[1]) {
     htmlCode.value = match[1].replace(/>\s+</g, '><')
+    chatHistory.messages[chatHistory.messages.length - 1].message.html = htmlCode.value
   }
   const parts = assistantResponse.split(expression)
   if (parts.length === 1) {
@@ -308,6 +514,9 @@ function replaceExpression(assistantResponse: string, expression: RegExp) {
 }
 
 function checkHTMLInResponse(assistantResponse: string) {
+  if (assistantResponse.includes(HTML_EXTRACTION_PLACEHOLDER)) {
+    setResponse(assistantResponse)
+  }
   if (assistantResponse.includes('<ai-response>')) {
     replaceExpression(assistantResponse, /<ai-response>([\s\S]*?)<\/ai-response>/)
   } else if (assistantResponse.includes('```html') || isHtmlAlreadyExtracted(assistantResponse)) {
@@ -426,7 +635,6 @@ function insertParagraphWise(paragraphs: string[]) {
   for (const paragraph of paragraphs) {
     paragraph.trim()
     const paragraphWithoutTags = paragraph.replace(/<[^>]*>/g, '')
-    console.log('paragraphWithoutTags', paragraphWithoutTags)
     if (paragraphWithoutTags === '') {
       continue
     }
@@ -463,6 +671,13 @@ function paste(index: number) {
   let textToPaste = matchPrefix[2]
   const isHtml = isHtmlAlreadyExtracted(textToPaste)
   if (isHtml) {
+    if (htmlCode.value === '') {
+      // when switching documetns the html code might be different or gone
+      // so we check whether the html code is stored on the optional html property of the message
+      if (chatHistory.messages[index].message.html !== undefined) {
+        htmlCode.value = chatHistory.messages[index].message.html
+      }
+    }
     textToPaste = htmlCode.value
   }
 
@@ -478,19 +693,20 @@ function paste(index: number) {
     } else {
       synthesizeSpeech("Couldn't find selection pasting content to end of text editor", -1)
       editorContent.value += replacementText
+      // scrollToBottomTextEditor()
     }
     removeSelection()
     return
   }
-
   synthesizeSpeech('Pasted to the text editor.', -1)
   if (isHtml || textToPaste.toLowerCase().includes('html')) {
     // Special case where html is not identified correctly
     editorContent.value += isHtml ? htmlCode.value.replace('<br>', '') : textToPaste
+    // scrollToBottomTextEditor()
     return
   }
-
   insertParagraphWise(textToPaste.split('\n'))
+  // scrollToBottomTextEditor()
 }
 
 function getLastAssistantResponse(): string {
@@ -584,6 +800,7 @@ async function speak(textToSpeak: string, index: number, player: speechsdk.Speak
           // no additional action required for user prompts
         } else if (chatHistory.messages[index].message.role === 'assistant') {
           if (chatHistory.messages[index - 1].audioPlayer.muted === false) {
+            console.log("User hasn't finished listening to the prompt, stop playing the assistant response")
             // Pause the assistant until the user has finished listening to the prompt
             chatHistory.messages[index].audioPlayer.player.pause()
             chatHistory.messages[index].audioPlayer.muted = true
@@ -696,85 +913,179 @@ async function focusPauseButton(index: number) {
 function removeHtmlTags(content: string) {
   return content.replace(/<[^>]*>/g, '')
 }
+
+function showDrawer(bool: boolean) {
+  drawer.value = bool
+}
+
+function clearDocument() {
+  chatHistory.messages = []
+  messages.value = []
+  messageInteractionCounter.value = 0
+  input.value = ''
+  editorContent.value = ''
+  voiceResponse.value = ''
+}
+
+function createNewDocument() {
+  // clearHistory()
+  const newSession = {
+    id: Date.now().toString(),
+    chatHistory: { messages: [] as ChatMessage[] },
+    editorContent: '',
+  }
+  activeSession.value = newSession
+  sessions.value.push(newSession)
+  clearDocument()
+  showDrawer(false)
+}
+
+function clearAllDocuments() {
+  sessions.value = []
+  localStorage.setItem('sessions', JSON.stringify([]))
+  createNewDocument()
+}
 </script>
 
 <template>
-  <v-container>
-    <v-row>
-      <v-col cols="4">
-        <div class="card">
-          <!-- <v-select
+  <v-app class="main-class">
+    <v-navigation-drawer v-if="drawer" class="sidebar" v-model="drawer" temporary>
+      <v-list density="compact" nav>
+        <v-list-item
+          prepend-icon="mdi-plus"
+          title="Add new document"
+          value="Add new document"
+          @click="createNewDocument"
+        ></v-list-item>
+        <v-list-item
+          prepend-icon="mdi-refresh"
+          title="Clear current document"
+          value="Clear current document"
+          @click="clearDocument"
+        ></v-list-item>
+        <v-list-item
+          prepend-icon="mdi-delete"
+          title="Clear all documents"
+          value="Clear all documents"
+          @click="clearAllDocuments"
+        ></v-list-item>
+        <v-divider class="my-2"></v-divider>
+        <v-list-item
+          v-for="(session, i) in sessions"
+          prepend-icon="mdi-file-document"
+          :key="session.id"
+          @click="setActiveSession(session.id)"
+          :title="'Document ' + (i + 1)"
+          :value="'Document #' + (i + 1)"
+          :class="session.id === activeSession.id ? 'is-highlighted' : ''"
+        >
+        </v-list-item>
+      </v-list>
+    </v-navigation-drawer>
+    <!-- <sidebar
+      :drawer="drawer"
+      :sessions="sessions"
+      @close-drawer="showDrawer"
+      @clear-history="clearDocument"
+      @new-document="createNewDocument"
+      @get-this-session="setActiveSession"
+    /> -->
+    <v-container>
+      <v-row :justify="drawer !== true ? 'start' : 'end'">
+        <sidebar-buttons :drawer="drawer" @close-drawer="showDrawer" />
+        <v-col cols="4">
+          <div class="card">
+            <!-- <v-select
             label="Select a speaker"
             density="compact"
             :items="['Jenny', 'Andrew', 'Sonia', 'Ryan']"
             v-model="selectedSpeaker"
             aria-label="Select a speaker"
           ></v-select> -->
-          <h1 class="card-title">Chat</h1>
-          <div class="card-text">
-            <div class="chat">
-              <form @submit="submit" class="d-flex input pb-2">
-                <v-btn
-                  icon="mdi-microphone"
-                  color="primary"
-                  class="no-uppercase mt-3 ml-1"
-                  @click="sttFromMic"
-                  aria-label="Start talking to ChatGPT"
-                ></v-btn>
-                <div class="flex-grow-1 mx-2">
-                  <input
-                    id="chat-input"
-                    class="chat-input"
-                    autocomplete="off"
-                    v-model="input"
-                    placeholder="Send a message"
-                    aria-label="Enter your prompt to ChatGPT"
-                  />
-                </div>
-              </form>
-              <chat-messages :messages="chatHistory.messages" @paste="paste" />
-              <!-- <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion"> Repeat last question</v-btn> -->
+            <h1 class="card-title">Chat</h1>
+            <div class="card-text">
+              <div class="chat">
+                <form @submit="submit" class="d-flex input pb-2">
+                  <v-btn
+                    icon="mdi-microphone"
+                    color="primary"
+                    class="no-uppercase mt-3 ml-1"
+                    @click="sttFromMic"
+                    aria-label="Start talking to ChatGPT"
+                  ></v-btn>
+                  <div class="flex-grow-1 mx-2">
+                    <input
+                      id="chat-input"
+                      class="chat-input"
+                      autocomplete="off"
+                      v-model="input"
+                      placeholder="Send a message"
+                      aria-label="Enter your prompt to ChatGPT"
+                    />
+                  </div>
+                </form>
+                <chat-messages :messages="chatHistory.messages" @paste="paste" />
+                <!-- <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion"> Repeat last question</v-btn> -->
+              </div>
             </div>
           </div>
-        </div>
-      </v-col>
-      <v-col cols="8">
-        <div class="card">
-          <h1 class="card-title">Editor</h1>
-          <div class="card-text">
-            <client-only>
-              <div>
-                <ckeditor
-                  id="text-editor"
-                  :editor-url="editorUrl"
-                  v-model="editorContent"
-                  @namespaceloaded="onNamespaceLoaded"
-                ></ckeditor>
-              </div>
-            </client-only>
+        </v-col>
+        <v-col :cols="drawer !== true ? 8 : 7">
+          <div class="card">
+            <h1 class="card-title">Editor</h1>
+            <div class="card-text">
+              <client-only>
+                <div>
+                  <ckeditor
+                    id="text-editor"
+                    :editor-url="editorUrl"
+                    v-model="editorContent"
+                    @namespaceloaded="onNamespaceLoaded"
+                  ></ckeditor>
+                </div>
+              </client-only>
+            </div>
+            <v-container class="d-flex flex-row justify-end read-aloud">
+              <v-btn
+                v-if="showReadAloudAudioPlayer.show"
+                id="playPauseButtonReadAloud"
+                :icon="readAloudAudioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
+                class="ma-1"
+                :color="readAloudAudioPlayer.muted ? 'success' : 'error'"
+                :aria-label="readAloudAudioPlayer.muted ? 'Play' : 'Pause'"
+                @click="pause(readAloudAudioPlayer)"
+              ></v-btn>
+              <v-btn class="ma-1 no-uppercase" color="primary" @click="toggleReadOnly(readOnly)"
+                >Toggle read only</v-btn
+              >
+              <v-btn class="ma-1 no-uppercase" color="primary" @click="clearEditorContent">Clear text editor</v-btn>
+            </v-container>
           </div>
-          <v-container class="d-flex flex-row justify-end" v-if="showReadAloudAudioPlayer.show">
-            <v-btn
-              id="playPauseButtonReadAloud"
-              :icon="readAloudAudioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
-              class="ma-1"
-              :color="readAloudAudioPlayer.muted ? 'success' : 'error'"
-              :aria-label="readAloudAudioPlayer.muted ? 'Play' : 'Pause'"
-              @click="pause(readAloudAudioPlayer)"
-            ></v-btn>
-          </v-container>
-        </div>
-      </v-col>
-    </v-row>
-  </v-container>
+        </v-col>
+      </v-row>
+    </v-container>
+  </v-app>
 </template>
 
 <style scoped>
+.is-highlighted {
+  background-color: #eceaea;
+}
+
+.read-aloud {
+  border-left: #ccced1 1px solid;
+  border-bottom: #ccced1 1px solid;
+  border-right: #ccced1 1px solid;
+  padding: 6px 8px 2px;
+}
+.main-class {
+  background: #ffffff;
+  overflow-y: hidden;
+}
 .card-title {
   display: block;
   font-size: 1.5em;
-  margin-block-start: 0.83em;
-  margin-block-end: 0.83em;
+  margin-block-end: 0.25em;
   margin-inline-start: 0px;
   margin-inline-end: 0px;
   font-weight: bold;
@@ -787,10 +1098,12 @@ function removeHtmlTags(content: string) {
   display: flex;
   flex-direction: column;
   height: 84vh;
+  max-height: 84vh;
   overflow-y: scroll;
 }
 .input {
   border-bottom: #ccced1 2px solid;
+  padding: 6px 8px 2px;
 }
 .chat-input {
   padding: 0.5rem;
