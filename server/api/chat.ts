@@ -136,7 +136,10 @@ async function checkStructureRequest(message: Message) {
 }
 
 async function improvePrompt(message: Message) {
-  // How to write a scientific article Hoogenboom BJ, Manske RC.
+  // 1.Paragraph How to write a scientific article Hoogenboom BJ, Manske RC.
+  // 2.Paragraph From Nature readability
+  // Rewritten by GPT-4
+  // 3. GPT-4 Example as reference point
   let systemPrompt = `
   You are now tasked to improve the current prompt to make it more accurate and detailed. Only update the current prompt and return it.
 
@@ -159,16 +162,48 @@ async function improvePrompt(message: Message) {
   The background, rationale, and main conclusions of the study should be clearly articulated.
   Titles and abstracts should be written in a manner easily comprehensible to any scientist.
   Specialized but essential terms should be concisely explained without resorting to a didactic tone.
+
+  Here is an example of a well-structured research paper:
+  Developing a Well-Structured Research Paper: Effective Strategies and Key Components
+    In this comprehensive guide, you will find a detailed structure to assist you in composing a well-organized and coherent research paper. The provided structure encompasses various essential components, ensuring a thorough and impactful exploration of your topic. Follow the steps below to create a compelling paper:
+    1. Introduction:
+    •	Start with an attention-grabbing opening sentence that introduces the broader context of your research.
+    •	Provide background information on the topic to familiarize readers with the subject matter.
+    •	State clear objectives, research questions, or hypotheses.
+    •	Summarize the significance and relevance of your research.
+    2. Literature Review:
+    •	Analyze existing scholarly works and studies related to your topic.
+    •	Identify and discuss key theories, concepts, or methodologies relevant to your research.
+    •	Highlight any knowledge gaps or controversies in the existing literature.
+    •	Establish a logical flow, grouping related sources and synthesizing information.
+    3. Methodology:
+    •	Outline the research design and approach used, including the research method (quantitative, qualitative, or mixed), data collection instruments, and data analysis techniques.
+    •	Explain the sampling strategy and sample size, ensuring its appropriateness for your research objectives.
+    •	Detail any ethical considerations or limitations faced during the research process.
+    4. Results and Analysis:
+    •	Present your findings objectively and concisely.
+    •	Utilize appropriate charts, graphs, or tables to visually represent data.
+    •	Interpret and analyze the results, highlighting their significance and relation to your research questions or hypotheses.
+    •	Discuss any unexpected or contrary findings and provide possible explanations.
+    5. Discussion:
+    •	Summarize and interpret the overall implications of your findings.
+    •	Relate your results back to the research objectives and literature review.
+    •	Discuss the theoretical and practical implications, as well as any recommendations for further research.
+    •	Address limitations and potential sources of bias in your study.
+    6. Conclusion:
+    •	Recapitulate the main points discussed in your paper.
+    •	Emphasize the significance of your research and its contribution to the field.
+    •	Provide a concise synthesis of the key takeaways.
+    •	Conclude with a thought-provoking statement or suggestion for future action related to your research.
+    7. References:
+    •	Cite all sources used following the appropriate citation style (e.g., APA, MLA, Chicago).
+    •	Ensure consistency and accuracy in formatting.
+    By adhering to this comprehensive structure, your research paper will be well-organized, logically coherent, and demonstrate a thorough understanding of the subject matter. Happy writing!
+    Below is the user request that you need to improve:
     `
-  // From Nature readability
-  // Rewritten by GPT-4
   let messages = [
     {
-      content: systemPrompt,
-      role: 'system',
-    },
-    {
-      content: message.content,
+      content: systemPrompt.concat(`Text"""\n${message.content}\n"""`),
       role: 'user',
     },
   ]
