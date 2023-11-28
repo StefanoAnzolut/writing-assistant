@@ -57,9 +57,6 @@ const lastContextMenuAction = ref('')
 /** The html code that is retrieved from the ChatGPT response */
 const htmlCode = ref('')
 
-/** Speech-To-Text Recognizer */
-const speechRecognizer = ref({} as speechsdk.SpeechRecognizer)
-
 /** The reference to see whether we have reached the end of a streaming response from ChatGPT */
 const responseFinished = ref(false)
 /** A global reference to de-allocated the periodic interval check to add new content when response is being streamed */
@@ -297,10 +294,6 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
   } catch (e) {
     console.log(e)
   }
-  waitForAssistant().then(assistantResponse => {
-    setResponse(assistantResponse)
-    playResponse(getLastAssistantResponseIndex())
-  })
 }
 
 function removeSelection() {
@@ -415,26 +408,11 @@ watch(messages, (_): void => {
         let newMessage = {
           id: Date.now().toString(),
           role: 'assistant',
-          content: 'Generating a structure for you, hold on. This might take a bit.',
+          content: '',
         }
         if (!messages.value[messages.value.length - 1].content.includes('<ai-response>')) {
-          newMessage.content = 'Generating a structure for you, hold on. This might take a while'
+          newMessage.content = "I'm still generating a structure for you, hold on. This might take a while"
         }
-        setTimeout(() => {
-          if (
-            responseFinished.value !== true &&
-            messages.value[messages.value.length - 1].content.includes('<ai-response>') &&
-            !chatHistory.messages[chatHistory.messages.length - 1].message.content.includes(
-              'Here is how a structure would look like'
-            )
-          ) {
-            synthesizeSpeech(
-              'Still generating the structure. This can take up to a minute. You will be notified once its completed. ',
-              getLastEntryIndex()
-            )
-            replayAudio(chatHistory.messages[chatHistory.messages.length - 1].audioPlayer)
-          }
-        }, 25000)
         addToChatHistory(newMessage)
         synthesizeSpeech(newMessage.content, getLastEntryIndex())
         voiceSynthesisOnce.value = true
@@ -442,7 +420,7 @@ watch(messages, (_): void => {
         tempEntry.message.new = false
       }
       focusPauseButton(getLastAssistantResponseIndex())
-    }, 3000)
+    }, 5000)
     return
   }
   checkHTMLInResponse(addPrefixToContent(message))
@@ -471,7 +449,8 @@ watch(responseFinished, (_): void => {
     let message = chatHistory.messages[chatHistory.messages.length - 1].message
     checkHTMLInResponse(message.content)
     if (!voiceResponse.value.includes(message.content)) {
-      if (message.content.includes('<ai-response>') || message.content.includes('<body>')) {
+      // TODO: Check how often a plain html body is returned for the edge case
+      if (message.content.includes('<ai-response>')) {
         return
       }
       addToVoiceResponse(chatHistory.messages[chatHistory.messages.length - 1].message.content)
@@ -538,30 +517,23 @@ async function sttFromMic() {
   speechConfig.setProperty(32, '3000')
   // Todo: Check additional effort to inlcude auto-detection of language
   const audioConfig = speechsdk.AudioConfig.fromDefaultMicrophoneInput()
-  speechRecognizer.value = new speechsdk.SpeechRecognizer(speechConfig, audioConfig)
-  speechRecognizer.value.startContinuousRecognitionAsync()
-
-  speechRecognizer.value.recognizing = (_, e) => {
+  const speechRecognizer = new speechsdk.SpeechRecognizer(speechConfig, audioConfig)
+  speechRecognizer.startContinuousRecognitionAsync()
+  speechRecognizer.recognizing = (_, e) => {
     console.log(`RECOGNIZING: Text=${e.result.text}`)
   }
 
   // Signals that the speech service has started to detect speech.
-  speechRecognizer.value.speechStartDetected = (_, e) => {
-    const str = '(speechStartDetected) SessionId: ' + e.sessionId
-    console.log(str)
+  speechRecognizer.speechStartDetected = (_, e) => {
+    console.log('(speechStartDetected) SessionId: ' + e.sessionId)
   }
 
-  speechRecognizer.value.recognized = (_, e) => {
+  speechRecognizer.recognized = (_, e) => {
     if (e.result.reason == speechsdk.ResultReason.RecognizedSpeech) {
       console.log(`RECOGNIZED: Text=${e.result.text}`)
       input.value = input.value.concat(e.result.text)
-      const eventTemp = new Event('submit')
-      handleSubmit(eventTemp)
-      waitForAssistant().then(assistantResponse => {
-        setResponse(assistantResponse)
-        playResponse(getLastAssistantResponseIndex())
-      })
-      speechRecognizer.value.stopContinuousRecognitionAsync()
+      handleSubmit(new Event('submit'))
+      speechRecognizer.stopContinuousRecognitionAsync()
       const env = new Tone.AmplitudeEnvelope({
         attack: 0.11,
         decay: 0.21,
@@ -581,37 +553,19 @@ async function sttFromMic() {
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
       console.log('NOMATCH: Speech could not be recognized.')
       synthesizeSpeech('I did not understand or hear you. Stopping recording of your microphone.', -1)
-      speechRecognizer.value.stopContinuousRecognitionAsync()
+      speechRecognizer.stopContinuousRecognitionAsync()
     }
   }
 
-  speechRecognizer.value.canceled = (_, e) => {
-    console.log(`CANCELED: Reason=${e.reason}`)
-    if (e.reason == speechsdk.CancellationReason.Error) {
-      console.log(`"CANCELED: ErrorCode=${e.errorCode}`)
-      console.log(`"CANCELED: ErrorDetails=${e.errorDetails}`)
-      console.log('CANCELED: Did you set the speech resource key and region values?')
-    }
-    speechRecognizer.value.stopContinuousRecognitionAsync()
-  }
-
-  speechRecognizer.value.sessionStopped = (s, e) => {
+  speechRecognizer.sessionStopped = (s, e) => {
     console.log('\n    Session stopped event.')
-    speechRecognizer.value.stopContinuousRecognitionAsync()
+    speechRecognizer.stopContinuousRecognitionAsync()
   }
-  speechRecognizer.value.sessionStarted = (s, e) => {
+  speechRecognizer.sessionStarted = (s, e) => {
     const synth = new Tone.Synth().toDestination()
     synth.triggerAttackRelease('C4', '8n')
     console.log('\n    Session started event.')
   }
-}
-
-async function waitForAssistant(): Promise<string> {
-  return new Promise((resolve, _) => {
-    setTimeout(() => {
-      resolve(getLastAssistantResponse())
-    }, 5500)
-  })
 }
 
 function addToVoiceResponse(assistantResponse: string) {
@@ -950,46 +904,15 @@ function clearAllDocuments() {
 <template>
   <v-app class="main-class">
     <v-navigation-drawer v-if="drawer" class="sidebar" v-model="drawer" temporary>
-      <v-list density="compact" nav>
-        <v-list-item
-          prepend-icon="mdi-plus"
-          title="Add new document"
-          value="Add new document"
-          @click="createNewDocument"
-        ></v-list-item>
-        <v-list-item
-          prepend-icon="mdi-refresh"
-          title="Clear current document"
-          value="Clear current document"
-          @click="clearDocument"
-        ></v-list-item>
-        <v-list-item
-          prepend-icon="mdi-delete"
-          title="Clear all documents"
-          value="Clear all documents"
-          @click="clearAllDocuments"
-        ></v-list-item>
-        <v-divider class="my-2"></v-divider>
-        <v-list-item
-          v-for="(session, i) in sessions"
-          prepend-icon="mdi-file-document"
-          :key="session.id"
-          @click="setActiveSession(session.id)"
-          :title="'Document ' + (i + 1)"
-          :value="'Document #' + (i + 1)"
-          :class="session.id === activeSession.id ? 'is-highlighted' : ''"
-        >
-        </v-list-item>
-      </v-list>
+      <sidebar-items
+        :sessions="sessions"
+        :activeSession="activeSession"
+        @set-active-session="setActiveSession"
+        @clear-all-documents="clearAllDocuments"
+        @create-new-document="createNewDocument"
+        @clear-document="clearDocument"
+      />
     </v-navigation-drawer>
-    <!-- <sidebar
-      :drawer="drawer"
-      :sessions="sessions"
-      @close-drawer="showDrawer"
-      @clear-history="clearDocument"
-      @new-document="createNewDocument"
-      @get-this-session="setActiveSession"
-    /> -->
     <v-container>
       <v-row :justify="drawer !== true ? 'start' : 'end'">
         <sidebar-buttons :drawer="drawer" @close-drawer="showDrawer" />
@@ -1006,23 +929,7 @@ function clearAllDocuments() {
             <div class="card-text">
               <div class="chat">
                 <form @submit="submit" class="d-flex input pb-2">
-                  <v-btn
-                    icon="mdi-microphone"
-                    color="primary"
-                    class="no-uppercase mt-3 ml-1"
-                    @click="sttFromMic"
-                    aria-label="Start talking to ChatGPT"
-                  ></v-btn>
-                  <div class="flex-grow-1 mx-2">
-                    <input
-                      id="chat-input"
-                      class="chat-input"
-                      autocomplete="off"
-                      v-model="input"
-                      placeholder="Send a message"
-                      aria-label="Enter your prompt to ChatGPT"
-                    />
-                  </div>
+                  <chat-input v-model="input" @sttFromMic="sttFromMic" />
                 </form>
                 <chat-messages :messages="chatHistory.messages" @paste="paste" />
                 <!-- <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion"> Repeat last question</v-btn> -->
@@ -1104,19 +1011,6 @@ function clearAllDocuments() {
 .input {
   border-bottom: #ccced1 2px solid;
   padding: 6px 8px 2px;
-}
-.chat-input {
-  padding: 0.5rem;
-  margin-top: 0.75rem;
-  border-radius: 0.25rem;
-  border-width: 1px;
-  border-color: #d1d5db;
-  width: 100%;
-  height: 48px;
-  box-shadow:
-    0 20px 25px -5px rgba(0, 0, 0, 0.1),
-    0 10px 10px -5px rgba(0, 0, 0, 0.04);
-  font-size: smaller;
 }
 .no-uppercase {
   text-transform: unset !important;
