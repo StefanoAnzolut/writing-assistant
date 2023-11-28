@@ -47,3 +47,9 @@ const emit = defineEmits(['createNewDocument', 'clearDocument', 'clearAllDocumen
     </v-list-item>
   </v-list>
 </template>
+
+<style scoped>
+.is-highlighted {
+  background-color: #eceaea;
+}
+</style>

@@ -1,8 +1,12 @@
-<script setup>
+<script setup lang="ts">
 const props = defineProps({
   modelValue: {
     type: String,
     default: '',
+  },
+  inputDisabled: {
+    type: Boolean,
+    default: false,
   },
 })
 const emit = defineEmits(['update:modelValue', 'sttFromMic'])
@@ -25,6 +29,7 @@ const emit = defineEmits(['update:modelValue', 'sttFromMic'])
       @input="$emit('update:modelValue', $event.target.value)"
       placeholder="Send a message"
       aria-label="Enter your prompt to ChatGPT"
+      :disabled="inputDisabled"
     />
   </div>
 </template>

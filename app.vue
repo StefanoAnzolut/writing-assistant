@@ -9,7 +9,7 @@ import { removeFormElementRoles } from './utils/CKEditor'
 import type { AudioPlayer } from './models/AudioPlayer'
 import type { ChatMessage } from './models/ChatMessage'
 import type { Session } from './models/Session'
-import { pause, replayAudio } from './composables/audio-player'
+import { pause } from './composables/audio-player'
 
 useHead({
   title: 'Writing Partner',
@@ -17,6 +17,7 @@ useHead({
 })
 
 onMounted(() => {
+  console.log('OnMounted has been called')
   sessions.value = JSON.parse(localStorage.getItem('sessions') || '[]')
   loadActiveSession()
   setInterval(() => {
@@ -46,7 +47,7 @@ const activeSession = ref({ id: '', chatHistory: {} as ChatHistory, editorConten
 /** Session chat history between the user and the writing partner */
 const chatHistory: ChatHistory = reactive({ messages: [] as ChatMessage[] })
 const messageInteractionCounter = ref(0)
-
+const inputDisabled = ref(false)
 /** Shared editor content between the user and the writing partner */
 const editorContent = ref('')
 /** A temporary store for the selected text from the text editor for custom questions and easier replacement */
@@ -153,28 +154,33 @@ function toggleReadOnly(isReadOnly: boolean) {
 
 function getActiveSession(): Session {
   if (sessions.value.length === 0) {
-    return {
+    activeSession.value = {
       id: Date.now().toString(),
       chatHistory: { messages: [] as ChatMessage[] },
       editorContent: '',
     }
+    return activeSession.value
   }
   if (activeSession.value.id === '') {
-    return sessions.value[sessions.value.length - 1]
+    activeSession.value = sessions.value[sessions.value.length - 1]
+    return activeSession.value
   }
-  return {
+  activeSession.value = {
     id: activeSession.value.id,
-    chatHistory: chatHistory,
+    chatHistory: { messages: chatHistory.messages },
     editorContent: editorContent.value,
   }
+  return activeSession.value
 }
 
 function setActiveSession(id: string): void {
+  storeSession(getActiveSession())
   activeSession.value = getSession(id)
   messageInteractionCounter.value = activeSession.value.chatHistory.messages.filter(
     message => message.message.role === 'user'
   ).length
   chatHistory.messages = activeSession.value.chatHistory.messages
+  setMessages(chatHistory.messages.map(message => message.message))
   editorContent.value = activeSession.value.editorContent
   sessionLoading.value = true
   showDrawer(false)
@@ -183,6 +189,8 @@ function setActiveSession(id: string): void {
 function getSession(id: string): Session {
   let session = sessions.value.find(session => session.id === id)
   if (session) {
+    chatHistory.messages = session.chatHistory.messages
+    editorContent.value = session.editorContent
     return session
   }
   throw new Error('Session not found')
@@ -259,6 +267,10 @@ function submit(e: any): void {
     input.value = input.value.concat(selectedText.value)
   }
   handleSubmit(e)
+  inputDisabled.value = true
+  setTimeout(() => {
+    inputDisabled.value = false
+  }, 1000)
 }
 
 /** Submission wrapper for the callback action of the context menu */
@@ -374,8 +386,8 @@ function getLastEntryIndex() {
  */
 watch(messages, (_): void => {
   if (messages.value.length === 0) {
+    // set the messages store of the vercel ai chat
     setMessages(chatHistory.messages.map(message => message.message))
-    // Somehow the following console log statement is required to set the messages appropriately
     return
   }
   if (sessionLoading.value && chatHistory.messages.length !== 0) {
@@ -404,14 +416,13 @@ watch(messages, (_): void => {
     synthesizeSpeech(entry.message.content, getLastEntryIndex())
     setTimeout(() => {
       if (isLastMessageUser()) {
-        console.log('Last message', messages.value[messages.value.length - 1])
         let newMessage = {
           id: Date.now().toString(),
           role: 'assistant',
           content: '',
         }
         if (!messages.value[messages.value.length - 1].content.includes('<ai-response>')) {
-          newMessage.content = "I'm still generating a structure for you, hold on. This might take a while"
+          newMessage.content = "Understood, I'm generating a structure for you, hold on. This might take a while"
         }
         addToChatHistory(newMessage)
         synthesizeSpeech(newMessage.content, getLastEntryIndex())
@@ -434,6 +445,7 @@ watch(messages, (_): void => {
     voiceSynthesisOnce.value = true
   }
 })
+
 watch(responseFinished, (_): void => {
   if (responseFinished.value) {
     activeSession.value = {
@@ -441,7 +453,7 @@ watch(responseFinished, (_): void => {
       chatHistory: chatHistory,
       editorContent: editorContent.value,
     }
-    storeSession(activeSession)
+    storeSession(activeSession.value)
     // final run to finish the voice synthesis
     clearInterval(intervalId.value)
     responseFinished.value = false
@@ -509,6 +521,7 @@ function checkHTMLInResponse(assistantResponse: string) {
 }
 
 async function sttFromMic() {
+  const start = Date.now()
   const tokenObj = await getTokenOrRefresh()
   const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
   speechConfig.speechRecognitionLanguage = 'en-US'
@@ -516,8 +529,10 @@ async function sttFromMic() {
   // https://learn.microsoft.com/en-us/javascript/api/microsoft-cognitiveservices-speech-sdk/propertyid?view=azure-node-latest
   speechConfig.setProperty(32, '3000')
   // Todo: Check additional effort to inlcude auto-detection of language
-  const audioConfig = speechsdk.AudioConfig.fromDefaultMicrophoneInput()
-  const speechRecognizer = new speechsdk.SpeechRecognizer(speechConfig, audioConfig)
+  const speechRecognizer = new speechsdk.SpeechRecognizer(
+    speechConfig,
+    speechsdk.AudioConfig.fromDefaultMicrophoneInput()
+  )
   speechRecognizer.startContinuousRecognitionAsync()
   speechRecognizer.recognizing = (_, e) => {
     console.log(`RECOGNIZING: Text=${e.result.text}`)
@@ -534,22 +549,6 @@ async function sttFromMic() {
       input.value = input.value.concat(e.result.text)
       handleSubmit(new Event('submit'))
       speechRecognizer.stopContinuousRecognitionAsync()
-      const env = new Tone.AmplitudeEnvelope({
-        attack: 0.11,
-        decay: 0.21,
-        sustain: 0.5,
-        release: 1.2,
-      }).toDestination()
-      // create an oscillator and connect it to the envelope
-      const osc = new Tone.Oscillator({
-        partials: [3, 2, 1],
-        type: 'custom',
-        frequency: 'C#4',
-        volume: -8,
-      })
-        .connect(env)
-        .start()
-      env.triggerAttackRelease(0.2)
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
       console.log('NOMATCH: Speech could not be recognized.')
       synthesizeSpeech('I did not understand or hear you. Stopping recording of your microphone.', -1)
@@ -562,8 +561,9 @@ async function sttFromMic() {
     speechRecognizer.stopContinuousRecognitionAsync()
   }
   speechRecognizer.sessionStarted = (s, e) => {
-    const synth = new Tone.Synth().toDestination()
-    synth.triggerAttackRelease('C4', '8n')
+    new Tone.Synth().toDestination().triggerAttackRelease('C4', '8n')
+    const end = Date.now()
+    console.log(`Speech recognizer start up time: ${end - start} ms`)
     console.log('\n    Session started event.')
   }
 }
@@ -879,10 +879,16 @@ function clearDocument() {
   input.value = ''
   editorContent.value = ''
   voiceResponse.value = ''
+  activeSession.value = {
+    id: activeSession.value.id,
+    chatHistory: { messages: [] as ChatMessage[] },
+    editorContent: '',
+  }
+  storeSession(activeSession.value)
 }
 
 function createNewDocument() {
-  // clearHistory()
+  storeSession(getActiveSession())
   const newSession = {
     id: Date.now().toString(),
     chatHistory: { messages: [] as ChatMessage[] },
@@ -929,7 +935,7 @@ function clearAllDocuments() {
             <div class="card-text">
               <div class="chat">
                 <form @submit="submit" class="d-flex input pb-2">
-                  <chat-input v-model="input" @sttFromMic="sttFromMic" />
+                  <chat-input v-model="input" @sttFromMic="sttFromMic" :inputDisabled="inputDisabled" />
                 </form>
                 <chat-messages :messages="chatHistory.messages" @paste="paste" />
                 <!-- <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion"> Repeat last question</v-btn> -->
@@ -975,10 +981,6 @@ function clearAllDocuments() {
 </template>
 
 <style scoped>
-.is-highlighted {
-  background-color: #eceaea;
-}
-
 .read-aloud {
   border-left: #ccced1 1px solid;
   border-bottom: #ccced1 1px solid;
