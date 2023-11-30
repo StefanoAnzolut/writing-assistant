@@ -53,18 +53,18 @@ async function collapse(index: number) {
         {{ removeHtmlTags(entry.message.content.substring(0, 50)) }}
       </h2>
       <p class="h3-style" v-if="entry.message.role === 'user'">
-        {{ removeHtmlTags(entry.message.content.substring(0, 8)) }}
+        {{ removeHtmlTags(entry.message.content.substring(0, entry.message.content.indexOf('\n'))) }}
         <span class="regular-font-weight">
-          {{ removeHtmlTags(entry.message.content.substring(8)) }}
+          {{ removeHtmlTags(entry.message.content.substring(entry.message.content.indexOf('\n'))) }}
         </span>
       </p>
       <h3 v-if="entry.message.role === 'assistant'">
-        {{ removeHtmlTags(entry.message.content.substring(0, 8)) }}
+        {{ removeHtmlTags(entry.message.content.substring(0, entry.message.content.indexOf('\n'))) }}
         <span class="regular-font-weight" v-if="showHtml(entry)">
           {{ entry.message.html }}
         </span>
         <span class="regular-font-weight" v-else>
-          {{ removeHtmlTags(entry.message.content.substring(8)) }}
+          {{ removeHtmlTags(entry.message.content.substring(entry.message.content.indexOf('\n'))) }}
         </span>
       </h3>
     </div>
