@@ -105,41 +105,22 @@ function onNamespaceLoaded() {
     ck.editor.removeMenuItem('paste')
     registerActions(ck.editor, submitSelectedCallback)
     removeFormElementRoles()
-    removeToolBarAriaLabels()
     editor.value = ck.editor
   })
-  // Element is not yet available, so we need to wait a bit (50 ms should be enough)
+
+  // Element is not yet available, so we need to wait a bit (150 ms should be enough)
   setTimeout(() => {
+    let toolbar = document.getElementsByClassName('cke_top')
+    toolbar[0].setAttribute('style', 'display: none')
+
+    let bottomBar = document.getElementsByClassName('cke_bottom')
+    bottomBar[0].setAttribute('style', 'display: none')
+
     let textAreaElements = document.getElementsByClassName('cke_contents cke_reset')
     for (let i = 0; i < textAreaElements.length; i++) {
-      textAreaElements[i].setAttribute('style', 'height: 76vh !important;')
+      textAreaElements[i].setAttribute('style', 'height: 80vh !important;')
     }
-  }, 100)
-}
-
-function removeToolBarAriaLabels() {
-  // TODO: Initial approach to decrease the amount of information in the toolbar as this is quite overwhelming
-  let allElements = document.getElementById('cke_1_toolbox')?.children
-  // if the element in allElements has an aria-labelledby attribute, remove it and store it in the ariaLabelledBy toolbar array
-  function removeAriaLabelledby(element) {
-    // Remove the 'aria-labelledby' attribute if it exists
-    if (element.hasAttribute('aria-labelledby')) {
-      element.removeAttribute('aria-labelledby')
-    }
-
-    // Get all child elements of the current element
-    let childElements = element.children
-
-    // Call removeAriaLabelledby on each child element
-    for (let i = 0; i < childElements.length; i++) {
-      removeAriaLabelledby(childElements[i])
-    }
-  }
-
-  // Call removeAriaLabelledby on each element in allElements
-  for (let i = 0; i < allElements.length; i++) {
-    removeAriaLabelledby(allElements[i])
-  }
+  }, 200)
 }
 
 function clearEditorContent() {
@@ -1015,8 +996,8 @@ function clearAllDocuments() {
   border: #ccced1 1px solid;
   display: flex;
   flex-direction: column;
-  height: 84vh;
-  max-height: 84vh;
+  height: 80vh;
+  max-height: 80vh;
   overflow-y: scroll;
 }
 .input {
