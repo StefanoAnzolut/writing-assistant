@@ -120,7 +120,7 @@ function onNamespaceLoaded() {
     for (let i = 0; i < textAreaElements.length; i++) {
       textAreaElements[i].setAttribute('style', 'height: 80vh !important;')
     }
-  }, 200)
+  }, 250)
 }
 
 function clearEditorContent() {
@@ -975,7 +975,7 @@ function clearAllDocuments() {
   border-left: #ccced1 1px solid;
   border-bottom: #ccced1 1px solid;
   border-right: #ccced1 1px solid;
-  padding: 6px 8px 2px;
+  padding: 4px 8px 4px;
 }
 .main-class {
   background: #ffffff;
