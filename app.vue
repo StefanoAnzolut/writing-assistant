@@ -88,7 +88,6 @@ const HTML_EXTRACTION_PLACEHOLDER =
 
 const editor = ref({} as any)
 const readOnly = ref(false)
-const editorToolbarAria = ref([])
 
 /** Load and set editor from proxy file server,
  *  as there were several issues with providing static files via Nuxt.
@@ -120,7 +119,7 @@ function onNamespaceLoaded() {
     for (let i = 0; i < textAreaElements.length; i++) {
       textAreaElements[i].setAttribute('style', 'height: 80vh !important;')
     }
-  }, 250)
+  }, 350)
 }
 
 function clearEditorContent() {
@@ -238,10 +237,6 @@ function loadActiveSession() {
 function keyDownHandler(event: KeyboardEvent) {
   if (event.code === 'Escape') {
     drawer.value = false
-  }
-
-  if (event.code === 'F10' && event.altKey) {
-    // now we go to the toolbar of the text editor
   }
 }
 
@@ -653,18 +648,6 @@ function paste(index: number) {
   // scrollToBottomTextEditor()
 }
 
-function getLastAssistantResponse(): string {
-  if (messages.value.length === 0) {
-    return ''
-  }
-  let lastAssistantResponseIndex = getLastAssistantResponseIndex()
-  let content = messages.value[lastAssistantResponseIndex].content
-  if (content.includes(`Answer ${messages.value.length}\n${content}`)) {
-    return content
-  } else {
-    return `Answer ${messages.value.length}\n${content}`
-  }
-}
 function getLastAssistantResponseIndex(): number {
   if (messages.value.length === 0) {
     throw new Error('Cannot get index when there is no message!')
@@ -821,23 +804,6 @@ function setResponse(response: string) {
   chatHistory.messages[chatHistory.messages.length - 1].message.content = response
 }
 
-async function playResponse(index: number) {
-  let message = chatHistory.messages[index].message
-  if (!message.new && !voiceResponse.value.includes(message.content)) {
-    addToVoiceResponse(message.content)
-    // continue the voice synthesis only once, after that wait until end or response
-    if (!voiceSynthesisOnce.value) {
-      console.log('playedOnce response')
-      if (message.content.includes('<ai-response>') || message.content.includes('<body>')) {
-        return
-      }
-      synthesizeSpeech(voiceResponse.value, index)
-      voiceSynthesisOnce.value = true
-    }
-  }
-  focusPauseButton(index)
-}
-
 async function focusPauseButton(index: number) {
   if (index < 0) {
     return
@@ -948,21 +914,14 @@ function clearAllDocuments() {
                 </div>
               </client-only>
             </div>
-            <v-container class="d-flex flex-row justify-end read-aloud">
-              <v-btn
-                v-if="showReadAloudAudioPlayer.show"
-                id="playPauseButtonReadAloud"
-                :icon="readAloudAudioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
-                class="ma-1"
-                :color="readAloudAudioPlayer.muted ? 'success' : 'error'"
-                :aria-label="readAloudAudioPlayer.muted ? 'Play' : 'Pause'"
-                @click="pause(readAloudAudioPlayer)"
-              ></v-btn>
-              <v-btn class="ma-1 no-uppercase" color="primary" @click="toggleReadOnly(readOnly)"
-                >Toggle read only</v-btn
-              >
-              <v-btn class="ma-1 no-uppercase" color="primary" @click="clearEditorContent">Clear text editor</v-btn>
-            </v-container>
+            <editor-controls
+              :show-read-aloud="showReadAloudAudioPlayer.show"
+              :audio-player="readAloudAudioPlayer"
+              :read-only="readOnly"
+              @pause="pause"
+              @toggle-read-only="toggleReadOnly"
+              @clear-editor-content="clearEditorContent"
+            />
           </div>
         </v-col>
       </v-row>
@@ -971,12 +930,6 @@ function clearAllDocuments() {
 </template>
 
 <style scoped>
-.read-aloud {
-  border-left: #ccced1 1px solid;
-  border-bottom: #ccced1 1px solid;
-  border-right: #ccced1 1px solid;
-  padding: 4px 8px 4px;
-}
 .main-class {
   background: #ffffff;
   overflow-y: hidden;
