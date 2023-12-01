@@ -22,7 +22,11 @@ onMounted(() => {
   loadActiveSession()
   setInterval(() => {
     storeSession(getActiveSession())
-  }, 60000)
+  }, 60000) // every minute
+  setupSpeechRecognizer()
+  setInterval(() => {
+    setupSpeechRecognizer()
+  }, 590000) // every 9.8 minutes
   window.addEventListener('keydown', keyDownHandler)
 })
 onBeforeUnmount(() => {
@@ -63,6 +67,8 @@ const responseFinished = ref(false)
 /** A global reference to de-allocated the periodic interval check to add new content when response is being streamed */
 const intervalId = ref({} as NodeJS.Timeout)
 
+/** SpeechRecognizer */
+const speechRecognizer = ref({} as speechsdk.SpeechRecognizer)
 /** The selected speaker for Text-To-Speech */
 const selectedSpeaker = ref('Jenny')
 const voiceSynthesisOnce = ref(false)
@@ -78,7 +84,7 @@ const readAloudAudioPlayer = ref({} as AudioPlayer)
 const showReadAloudAudioPlayer = ref({ show: false })
 
 const HTML_EXTRACTION_PLACEHOLDER =
-  '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor] .'
+  'Generated a structure. Expand it using the expand button and paste it with the paste button to the text editor.'
 
 const editor = ref({} as any)
 const readOnly = ref(false)
@@ -520,8 +526,7 @@ function checkHTMLInResponse(assistantResponse: string) {
   }
 }
 
-async function sttFromMic() {
-  const start = Date.now()
+async function setupSpeechRecognizer() {
   const tokenObj = await getTokenOrRefresh()
   const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
   speechConfig.speechRecognitionLanguage = 'en-US'
@@ -529,38 +534,42 @@ async function sttFromMic() {
   // https://learn.microsoft.com/en-us/javascript/api/microsoft-cognitiveservices-speech-sdk/propertyid?view=azure-node-latest
   speechConfig.setProperty(32, '3000')
   // Todo: Check additional effort to inlcude auto-detection of language
-  const speechRecognizer = new speechsdk.SpeechRecognizer(
+  speechRecognizer.value = new speechsdk.SpeechRecognizer(
     speechConfig,
     speechsdk.AudioConfig.fromDefaultMicrophoneInput()
   )
-  speechRecognizer.startContinuousRecognitionAsync()
-  speechRecognizer.recognizing = (_, e) => {
+}
+
+async function sttFromMic() {
+  const start = Date.now()
+  speechRecognizer.value.startContinuousRecognitionAsync()
+  speechRecognizer.value.recognizing = (_, e) => {
     console.log(`RECOGNIZING: Text=${e.result.text}`)
   }
 
   // Signals that the speech service has started to detect speech.
-  speechRecognizer.speechStartDetected = (_, e) => {
+  speechRecognizer.value.speechStartDetected = (_, e) => {
     console.log('(speechStartDetected) SessionId: ' + e.sessionId)
   }
 
-  speechRecognizer.recognized = (_, e) => {
+  speechRecognizer.value.recognized = (_, e) => {
     if (e.result.reason == speechsdk.ResultReason.RecognizedSpeech) {
       console.log(`RECOGNIZED: Text=${e.result.text}`)
       input.value = input.value.concat(e.result.text)
       handleSubmit(new Event('submit'))
-      speechRecognizer.stopContinuousRecognitionAsync()
+      speechRecognizer.value.stopContinuousRecognitionAsync()
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
       console.log('NOMATCH: Speech could not be recognized.')
       synthesizeSpeech('I did not understand or hear you. Stopping recording of your microphone.', -1)
-      speechRecognizer.stopContinuousRecognitionAsync()
+      speechRecognizer.value.stopContinuousRecognitionAsync()
     }
   }
 
-  speechRecognizer.sessionStopped = (s, e) => {
+  speechRecognizer.value.sessionStopped = (s, e) => {
     console.log('\n    Session stopped event.')
-    speechRecognizer.stopContinuousRecognitionAsync()
+    speechRecognizer.value.stopContinuousRecognitionAsync()
   }
-  speechRecognizer.sessionStarted = (s, e) => {
+  speechRecognizer.value.sessionStarted = (s, e) => {
     new Tone.Synth().toDestination().triggerAttackRelease('C4', '8n')
     const end = Date.now()
     console.log(`Speech recognizer start up time: ${end - start} ms`)

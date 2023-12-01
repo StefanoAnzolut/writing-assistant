@@ -13,7 +13,7 @@ defineEmits(['paste'])
 const isShowHtml = ref(false)
 
 const HTML_EXTRACTION_PLACEHOLDER =
-  '[ Here is how a structure would look like. The structure has been extracted from the answer - use the paste button to add the structure to the text editor] .'
+  'Generated a structure. Expand it using the expand button and paste it with the paste button to the text editor.'
 
 function removeHtmlTags(content: string) {
   return content.replace(/<[^>]*>/g, '')
@@ -70,31 +70,17 @@ async function collapse(index: number) {
     </div>
     <v-container class="d-flex flex-row justify-end">
       <v-btn
-        v-if="
-          showHtml(entry) &&
-          entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) &&
-          entry.message.role === 'assistant'
-        "
-        :id="'collapseButton' + i"
-        icon="mdi-chevron-up"
+        v-if="entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) && entry.message.role === 'assistant'"
+        :id="showHtml(entry) ? 'collapseButton' + i : 'expandButton' + i"
+        :icon="showHtml(entry) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
         class="ma-1"
         color="primary"
-        aria-label="Collapse structure for this answer"
-        @click="collapse(i)"
-        size="small"
-      ></v-btn>
-      <v-btn
-        v-if="
-          !showHtml(entry) &&
-          entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) &&
-          entry.message.role === 'assistant'
+        :aria-label="
+          showHtml(entry)
+            ? `Collapse structure for ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`
+            : `Expand structure for ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`
         "
-        :id="'expandButton' + i"
-        icon="mdi-chevron-down"
-        class="ma-1"
-        color="primary"
-        aria-label="Expand structure for this answer"
-        @click="expand(i)"
+        @click="showHtml(entry) ? collapse(i) : expand(i)"
         size="small"
       ></v-btn>
       <v-btn
@@ -103,7 +89,11 @@ async function collapse(index: number) {
         class="ma-1"
         color="success"
         @click="pause(entry.audioPlayer)"
-        :aria-label="entry.audioPlayer.muted ? 'Play' : 'Pause'"
+        :aria-label="
+          entry.audioPlayer.muted
+            ? `Play ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`
+            : `Pause ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`
+        "
         size="small"
       >
       </v-btn>
@@ -113,7 +103,7 @@ async function collapse(index: number) {
         class="ma-1"
         color="primary"
         @click="$emit('paste', i)"
-        aria-label="Add to chat editor"
+        :aria-label="`Add ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))} to chat editor`"
         size="small"
         v-if="entry.message.role === 'assistant'"
       >
