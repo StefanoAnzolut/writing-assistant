@@ -59,9 +59,6 @@ const selectedText = ref('')
 
 const lastContextMenuAction = ref('')
 
-/** The html code that is retrieved from the ChatGPT response */
-const htmlCode = ref('')
-
 /** The reference to see whether we have reached the end of a streaming response from ChatGPT */
 const responseFinished = ref(false)
 /** A global reference to de-allocated the periodic interval check to add new content when response is being streamed */
@@ -472,8 +469,8 @@ function replaceExpression(assistantResponse: string, expression: RegExp) {
   // const expression = /<ai-response>([\s\S]*?)<\/ai-response>/
   const match = assistantResponse.match(expression)
   if (match && match[1]) {
-    htmlCode.value = match[1].replace(/>\s+</g, '><')
-    chatHistory.messages[chatHistory.messages.length - 1].message.html = htmlCode.value
+    chatHistory.messages[chatHistory.messages.length - 1].message.html = match[1].replace(/>\s+</g, '><')
+    chatHistory.messages[chatHistory.messages.length - 1].message.showHtml = false
   }
   const parts = assistantResponse.split(expression)
   if (parts.length === 1) {
@@ -607,24 +604,15 @@ function paste(index: number) {
   if (!matchPrefix) {
     return
   }
-  let textToPaste = matchPrefix[2]
-  const isHtml = isHtmlAlreadyExtracted(textToPaste)
+  let replacementText = matchPrefix[2]
+  const isHtml = isHtmlAlreadyExtracted(replacementText)
   if (isHtml) {
-    if (htmlCode.value === '') {
-      // when switching documetns the html code might be different or gone
-      // so we check whether the html code is stored on the optional html property of the message
-      if (chatHistory.messages[index].message.html !== undefined) {
-        htmlCode.value = chatHistory.messages[index].message.html
-      }
-    }
-    textToPaste = htmlCode.value
+    replacementText = chatHistory.messages[index].message.html
   }
 
   if (IsInlineModification(lastContextMenuAction.value) && selectedText.value !== '') {
     editorContent.value = decodeHtml(editorContent.value)
     selectedText.value = decodeHtml(selectedText.value)
-
-    const replacementText = isHtml ? htmlCode.value : textToPaste
     editorContent.value = editorContent.value.replace(/>\s+</g, '><').replace(selectedText.value, replacementText)
 
     if (editorContent.value.includes(replacementText)) {
@@ -638,13 +626,13 @@ function paste(index: number) {
     return
   }
   synthesizeSpeech('Pasted to the text editor.', -1)
-  if (isHtml || textToPaste.toLowerCase().includes('html')) {
+  if (replacementText.toLowerCase().includes('html')) {
     // Special case where html is not identified correctly
-    editorContent.value += isHtml ? htmlCode.value.replace('<br>', '') : textToPaste
+    editorContent.value += replacementText
     // scrollToBottomTextEditor()
     return
   }
-  insertParagraphWise(textToPaste.split('\n'))
+  insertParagraphWise(replacementText.split('\n'))
   // scrollToBottomTextEditor()
 }
 

@@ -6,4 +6,5 @@ export interface Message {
   name?: string
   new?: boolean
   html?: string
+  showHtml?: boolean
 }

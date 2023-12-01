@@ -10,8 +10,6 @@ const props = defineProps({
 })
 defineEmits(['paste'])
 
-const isShowHtml = ref(false)
-
 const HTML_EXTRACTION_PLACEHOLDER =
   'Generated a structure. Expand it using the expand button and paste it with the paste button to the text editor.'
 
@@ -20,11 +18,11 @@ function removeHtmlTags(content: string) {
 }
 
 function showHtml(entry: ChatMessage) {
-  return isShowHtml.value && entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER)
+  return entry.message.showHtml && entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER)
 }
 
 async function expand(index: number) {
-  isShowHtml.value = true
+  props.messages[index].message.showHtml = true
   await nextTick()
   const collapseButton = document.getElementById('collapseButton' + index)
   if (collapseButton) {
@@ -32,7 +30,7 @@ async function expand(index: number) {
   }
 }
 async function collapse(index: number) {
-  isShowHtml.value = false
+  props.messages[index].message.showHtml = false
   await nextTick()
   const expandButton = document.getElementById('expandButton' + index)
   if (expandButton) {
