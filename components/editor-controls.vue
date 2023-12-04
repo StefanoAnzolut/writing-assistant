@@ -15,7 +15,7 @@ const props = defineProps({
     required: true,
   },
 })
-defineEmits(['pause', 'toggleReadOnly', 'clearEditorContent'])
+defineEmits(['pauseReadAloud', 'toggleReadOnly', 'clearEditorContent'])
 </script>
 
 <template>
@@ -27,7 +27,7 @@ defineEmits(['pause', 'toggleReadOnly', 'clearEditorContent'])
       class="ma-1"
       :color="props.audioPlayer.muted ? 'success' : 'error'"
       :aria-label="props.audioPlayer.muted ? 'Play' : 'Pause'"
-      @click="$emit('pause', props.audioPlayer)"
+      @click="$emit('pauseReadAloud', props.audioPlayer)"
     ></v-btn>
     <v-btn class="ma-1 no-uppercase" color="primary" @click="$emit('toggleReadOnly', readOnly)">Toggle read only</v-btn>
     <v-btn class="ma-1 no-uppercase" color="primary" @click="$emit('clearEditorContent')">Clear text editor</v-btn>

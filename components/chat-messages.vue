@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { ChatMessage } from '~/models/ChatMessage'
-import { pause } from '~/composables/audio-player'
 
 const props = defineProps({
   messages: {
@@ -8,10 +7,10 @@ const props = defineProps({
     required: true,
   },
 })
-defineEmits(['paste'])
+defineEmits(['paste', 'pause'])
 
 const HTML_EXTRACTION_PLACEHOLDER =
-  'Generated a structure. Expand it using the expand button and paste it with the paste button to the text editor.'
+  'Generated a structure. Expand it using the expand button and paste it to the text editor with the paste button.'
 
 function removeHtmlTags(content: string) {
   return content.replace(/<[^>]*>/g, '')
@@ -59,7 +58,7 @@ async function collapse(index: number) {
       <h3 v-if="entry.message.role === 'assistant'">
         {{ removeHtmlTags(entry.message.content.substring(0, entry.message.content.indexOf('\n'))) }}
         <span class="regular-font-weight" v-if="showHtml(entry)">
-          {{ entry.message.html }}
+          {{ entry.message.contentHtml }}
         </span>
         <span class="regular-font-weight" v-else>
           {{ removeHtmlTags(entry.message.content.substring(entry.message.content.indexOf('\n'))) }}
@@ -86,7 +85,7 @@ async function collapse(index: number) {
         :icon="entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
         class="ma-1"
         color="success"
-        @click="pause(entry.audioPlayer)"
+        @click="$emit('pause', entry, i)"
         :aria-label="
           entry.audioPlayer.muted
             ? `Play ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`

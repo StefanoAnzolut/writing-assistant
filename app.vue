@@ -9,7 +9,6 @@ import { removeFormElementRoles } from './utils/CKEditor'
 import type { AudioPlayer } from './models/AudioPlayer'
 import type { ChatMessage } from './models/ChatMessage'
 import type { Session } from './models/Session'
-import { pause } from './composables/audio-player'
 
 useHead({
   title: 'Writing Partner',
@@ -81,7 +80,7 @@ const readAloudAudioPlayer = ref({} as AudioPlayer)
 const showReadAloudAudioPlayer = ref({ show: false })
 
 const HTML_EXTRACTION_PLACEHOLDER =
-  'Generated a structure. Expand it using the expand button and paste it with the paste button to the text editor.'
+  'Generated a structure. Expand it using the expand button and paste it to the text editor with the paste button.'
 
 const editor = ref({} as any)
 const readOnly = ref(false)
@@ -305,7 +304,11 @@ function isFinished(message: string) {
 function addPrefixToContent(latestMessage) {
   const matchPrefix = latestMessage.content.match(/Answer (\d+)\n([\s\S]*)/)
   if (matchPrefix) {
-    return matchPrefix[2]
+    if (matchPrefix[2].includes('Answer')) {
+      return matchPrefix[2]
+    } else {
+      return `Answer ${messageInteractionCounter.value}\n${matchPrefix[2]}`
+    }
   }
   return latestMessage.role === 'user'
     ? `Prompt ${messageInteractionCounter.value}\n${latestMessage.content}`
@@ -401,7 +404,7 @@ watch(messages, (_): void => {
           content: '',
         }
         if (!messages.value[messages.value.length - 1].content.includes('<ai-response>')) {
-          newMessage.content = "Understood, I'm generating a structure for you, hold on. This might take a while"
+          newMessage.content = "Understood, I'm generating a structure for you, hold on. This might take a while."
         }
         addToChatHistory(newMessage)
         synthesizeSpeech(newMessage.content, getLastEntryIndex())
@@ -471,6 +474,7 @@ function replaceExpression(assistantResponse: string, expression: RegExp) {
   if (match && match[1]) {
     chatHistory.messages[chatHistory.messages.length - 1].message.html = match[1].replace(/>\s+</g, '><')
     chatHistory.messages[chatHistory.messages.length - 1].message.showHtml = false
+    generateReadableHTML(chatHistory.messages[chatHistory.messages.length - 1])
   }
   const parts = assistantResponse.split(expression)
   if (parts.length === 1) {
@@ -625,7 +629,13 @@ function paste(index: number) {
     removeSelection()
     return
   }
-  synthesizeSpeech('Pasted to the text editor.', -1)
+
+  if (isHtml) {
+    synthesizeSpeech('Pasted structured to the text editor.', -1)
+    editorContent.value = replacementText
+    return
+  }
+  synthesizeSpeech('Pasted to the text editor and appended at the end.', -1)
   if (replacementText.toLowerCase().includes('html')) {
     // Special case where html is not identified correctly
     editorContent.value += replacementText
@@ -738,8 +748,8 @@ async function speak(textToSpeak: string, index: number, player: speechsdk.Speak
 
 function configureAudioPlayer(index: number): AudioPlayer {
   let audioPlayer = newAudioPlayer()
-
   audioPlayer.player.onAudioEnd = audioPlayer => {
+    window.console.log('Audio track ended')
     audioPlayer.pause()
     chatHistory.messages[index].audioPlayer.muted = true
     chatHistory.messages[index].audioPlayer.alreadyPlayed = true
@@ -760,6 +770,7 @@ function configureAudioPlayer(index: number): AudioPlayer {
   }
 
   audioPlayer.player.onAudioStart = () => {
+    window.console.log('Audio track started')
     prevAudioPlayer.value.player.pause()
     let currentTime = prevAudioPlayer.value.player.currentTime
     if (currentTime !== -1 && !voiceSynthesisStartOver.value) {
@@ -810,6 +821,106 @@ async function focusPauseButton(index: number) {
 
 function removeHtmlTags(content: string) {
   return content.replace(/<[^>]*>/g, '')
+}
+
+function pausePlayer(audioPlayer: AudioPlayer): void {
+  audioPlayer.player.pause()
+  audioPlayer.muted = true
+}
+
+function resumePlayer(audioPlayer: AudioPlayer): void {
+  audioPlayer.player.resume()
+  audioPlayer.muted = false
+}
+
+function handlePause(entry: ChatMessage, index: number) {
+  if (!entry.audioPlayer.muted) {
+    pausePlayer(entry.audioPlayer)
+    return
+  }
+  if (!entry.message.html) {
+    resumePlayer(entry.audioPlayer)
+    return
+  }
+  // Regular handling above, special case handling for structured answer response
+  // TODO: Here we need to make sure that we have a proper mapping from html tags to text
+  // When we are reading the structured answer to the user, we want structure information but no html tags
+  if (entry.message.showHtml) {
+    if (voiceResponse.value === entry.message.contentHtml) {
+      resumePlayer(entry.audioPlayer)
+    } else {
+      voiceResponse.value = entry.message.contentHtml
+      voiceSynthesisStartOver.value = true
+      synthesizeSpeech(entry.message.contentHtml, index)
+    }
+  } else {
+    if (voiceResponse.value === entry.message.content) {
+      resumePlayer(entry.audioPlayer)
+    } else {
+      synthesizeSpeech(entry.message.content, index)
+      voiceResponse.value = entry.message.content
+      voiceSynthesisStartOver.value = true
+    }
+  }
+}
+
+function pause(entry: ChatMessage, index: number) {
+  // We are working with a new audio player object
+  if (typeof entry.audioPlayer.player.pause === 'function') {
+    handlePause(entry, index)
+    return
+  }
+  // TODO: Investigate
+  // First click does the synthesis but does not play audio not does the label change (no change in audioPlayer.muted)
+  // Second click changes the label but does not play audio
+  // Third click plays audio and but label does not change
+
+  if (entry.message.showHtml) {
+    generateReadableHTML(entry)
+    voiceResponse.value = entry.message.contentHtml
+    voiceSynthesisStartOver.value = true
+    synthesizeSpeech(entry.message.contentHtml, index)
+  } else {
+    voiceResponse.value = entry.message.content
+    voiceSynthesisStartOver.value = true
+    synthesizeSpeech(entry.message.content, index)
+  }
+  // Now we have a valid audioPlayer so we can call this function "play/pause" again
+  pause(entry, index)
+}
+
+function generateReadableHTML(entry: ChatMessage): void {
+  let html = entry.message.html
+  if (html === undefined) {
+    return
+  }
+  html = html.replace(/<body>/g, '').replace(/<\/body>/g, '')
+  html = html.replace(/<html>/g, '').replace(/<\/html>/g, '')
+  html = html.replace(/<h1>/g, 'Heading 1 ').replace(/<\/h1>/g, '\n')
+  html = html.replace(/<h2>/g, 'Heading 2 ').replace(/<\/h2>/g, '\n')
+  html = html.replace(/<h3>/g, 'Heading 3 ').replace(/<\/h3>/g, '\n')
+  html = html.replace(/<h4>/g, 'Heading 4 ').replace(/<\/h4>/g, '\n')
+  html = html.replace(/<h5>/g, 'Heading 5 ').replace(/<\/h5>/g, '\n')
+  html = html.replace(/<h6>/g, 'Heading 6 ').replace(/<\/h6>/g, '\n')
+  html = html.replace(/<p>/g, 'Paragraph ').replace(/<\/p>/g, '\n')
+  html = html.replace(/<ul>/g, 'Unordered List ').replace(/<\/ul>/g, '\n')
+  html = html.replace(/<ol>/g, 'Ordered List ').replace(/<\/ol>/g, '\n')
+  html = html.replace(/<li>/g, 'List Item ').replace(/<\/li>/g, '\n')
+  html = html.replace(/<strong>/g, 'Bold ').replace(/<\/strong>/g, '\n')
+  entry.message.contentHtml = html
+}
+
+function readLastAnswer(): void {
+  let lastAssistantResponseIndex = getLastAssistantResponseIndex()
+  if (typeof chatHistory.messages[lastAssistantResponseIndex].audioPlayer.player.resume === 'function') {
+    if (chatHistory.messages[lastAssistantResponseIndex].audioPlayer.alreadyPlayed) {
+      chatHistory.messages[lastAssistantResponseIndex].audioPlayer.player.resume()
+      chatHistory.messages[lastAssistantResponseIndex].audioPlayer.muted = false
+      focusPauseButton(lastAssistantResponseIndex)
+      return
+    }
+  }
+  synthesizeSpeech(chatHistory.messages[lastAssistantResponseIndex].message.content, lastAssistantResponseIndex)
 }
 
 function showDrawer(bool: boolean) {
@@ -881,10 +992,10 @@ function clearAllDocuments() {
                 <form @submit="submit" class="d-flex input pb-2">
                   <chat-input v-model="input" @sttFromMic="sttFromMic" :inputDisabled="inputDisabled" />
                 </form>
-                <chat-messages :messages="chatHistory.messages" @paste="paste" />
-                <!-- <v-btn color="primary" class="ma-4 no-uppercase" @click="repeatLastQuestion"> Repeat last question</v-btn> -->
+                <chat-messages :messages="chatHistory.messages" @paste="paste" @pause="pause" />
               </div>
             </div>
+            <chat-controls @read-last-answer="readLastAnswer" />
           </div>
         </v-col>
         <v-col :cols="drawer !== true ? 8 : 7">
@@ -906,7 +1017,7 @@ function clearAllDocuments() {
               :show-read-aloud="showReadAloudAudioPlayer.show"
               :audio-player="readAloudAudioPlayer"
               :read-only="readOnly"
-              @pause="pause"
+              @pause-read-aloud="pause"
               @toggle-read-only="toggleReadOnly"
               @clear-editor-content="clearEditorContent"
             />
