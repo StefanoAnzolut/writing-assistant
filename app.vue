@@ -9,6 +9,7 @@ import { removeFormElementRoles } from './utils/CKEditor'
 import type { AudioPlayer } from './models/AudioPlayer'
 import type { ChatMessage } from './models/ChatMessage'
 import type { Session } from './models/Session'
+import { generateReadableTextFromHTML } from './utils/htmlReader'
 
 useHead({
   title: 'Writing Partner',
@@ -69,7 +70,8 @@ const speechRecognizer = ref({} as speechsdk.SpeechRecognizer)
 const selectedSpeaker = ref('Jenny')
 const voiceSynthesisOnce = ref(false)
 const voiceSynthesisStartOver = ref(false)
-
+const resynthesizeAudio = ref(false)
+const resynthesizeAudioPlayer = ref({} as AudioPlayer)
 /** Voice response from ChatGPT */
 const voiceResponse = ref('')
 
@@ -206,6 +208,7 @@ function loadActiveSession() {
   }
   editorContent.value = activeSession.value.editorContent
   sessionLoading.value = true
+  muteAllAudioplayers()
 }
 
 // TODO: Figure out how scrolling works properly for the ck4editor that is loaded in the iframe.
@@ -294,6 +297,9 @@ function removeSelection() {
 function preprocessMessage(message: Message): Message {
   responseFinished.value = isFinished(message.content)
   message.content = message.content.replace('2:"[{\\"done\\":true}]"', '')
+  message.content = message.content.replace('[MODIFIED]:', '')
+  message.content = message.content.replace('[MODIFIED_CONTENT]:', '')
+  message.content = message.content.replace('[MODIFICATION_REQUEST]:', '')
   return message
 }
 
@@ -395,6 +401,7 @@ watch(messages, (_): void => {
   }
   let entry = getLastEntry()
   if (entry.message.role === 'user') {
+    entry.message.content = removeHtmlTags(entry.message.content)
     synthesizeSpeech(entry.message.content, getLastEntryIndex())
     setTimeout(() => {
       if (isLastMessageUser()) {
@@ -465,6 +472,13 @@ watch(readOnly, (_): void => {
       let element = document.getElementById('cke_editor1_arialbl')
       element.innerText = 'Rich Text Editor'
     }
+  }
+})
+
+watch(resynthesizeAudio, (_): void => {
+  if (!resynthesizeAudio.value) {
+    pausePlayer(resynthesizeAudioPlayer.value)
+    resumePlayer(resynthesizeAudioPlayer.value)
   }
 })
 
@@ -738,6 +752,9 @@ async function speak(textToSpeak: string, index: number, player: speechsdk.Speak
       }
       synthesizer.close()
       console.log(text)
+      if (resynthesizeAudio.value) {
+        resynthesizeAudio.value = false
+      }
     },
     function (err) {
       console.log(`Error: ${err}.\n`)
@@ -828,6 +845,14 @@ function pausePlayer(audioPlayer: AudioPlayer): void {
   audioPlayer.muted = true
 }
 
+function muteAllAudioplayers(): void {
+  chatHistory.messages.forEach((message: ChatMessage) => {
+    if (message.audioPlayer && !message.audioPlayer.muted) {
+      message.audioPlayer.muted = true
+    }
+  })
+}
+
 function resumePlayer(audioPlayer: AudioPlayer): void {
   audioPlayer.player.resume()
   audioPlayer.muted = false
@@ -842,24 +867,24 @@ function handlePause(entry: ChatMessage, index: number) {
     resumePlayer(entry.audioPlayer)
     return
   }
-  // Regular handling above, special case handling for structured answer response
-  // TODO: Here we need to make sure that we have a proper mapping from html tags to text
-  // When we are reading the structured answer to the user, we want structure information but no html tags
+  // Structured response handling
   if (entry.message.showHtml) {
     if (voiceResponse.value === entry.message.contentHtml) {
       resumePlayer(entry.audioPlayer)
     } else {
-      voiceResponse.value = entry.message.contentHtml
       voiceSynthesisStartOver.value = true
+      resynthesizeAudio.value = true
       synthesizeSpeech(entry.message.contentHtml, index)
+      voiceResponse.value = entry.message.contentHtml
     }
   } else {
     if (voiceResponse.value === entry.message.content) {
       resumePlayer(entry.audioPlayer)
     } else {
-      synthesizeSpeech(entry.message.content, index)
-      voiceResponse.value = entry.message.content
       voiceSynthesisStartOver.value = true
+      resynthesizeAudio.value = true
+      synthesizeSpeech(entry.message.content, index)
+      addToVoiceResponse(entry.message.content)
     }
   }
 }
@@ -870,23 +895,20 @@ function pause(entry: ChatMessage, index: number) {
     handlePause(entry, index)
     return
   }
-  // TODO: Investigate
-  // First click does the synthesis but does not play audio not does the label change (no change in audioPlayer.muted)
-  // Second click changes the label but does not play audio
-  // Third click plays audio and but label does not change
-
+  // TODO: Investigate why the onAudioEnd does not fire when starting from a stored session
   if (entry.message.showHtml) {
     generateReadableHTML(entry)
-    voiceResponse.value = entry.message.contentHtml
     voiceSynthesisStartOver.value = true
+    resynthesizeAudio.value = true
     synthesizeSpeech(entry.message.contentHtml, index)
+    voiceResponse.value = entry.message.contentHtml
   } else {
-    voiceResponse.value = entry.message.content
     voiceSynthesisStartOver.value = true
+    resynthesizeAudio.value = true
     synthesizeSpeech(entry.message.content, index)
+    addToVoiceResponse(entry.message.content)
   }
-  // Now we have a valid audioPlayer so we can call this function "play/pause" again
-  pause(entry, index)
+  resynthesizeAudioPlayer.value = entry.audioPlayer
 }
 
 function generateReadableHTML(entry: ChatMessage): void {
@@ -894,20 +916,7 @@ function generateReadableHTML(entry: ChatMessage): void {
   if (html === undefined) {
     return
   }
-  html = html.replace(/<body>/g, '').replace(/<\/body>/g, '')
-  html = html.replace(/<html>/g, '').replace(/<\/html>/g, '')
-  html = html.replace(/<h1>/g, 'Heading 1 ').replace(/<\/h1>/g, '\n')
-  html = html.replace(/<h2>/g, 'Heading 2 ').replace(/<\/h2>/g, '\n')
-  html = html.replace(/<h3>/g, 'Heading 3 ').replace(/<\/h3>/g, '\n')
-  html = html.replace(/<h4>/g, 'Heading 4 ').replace(/<\/h4>/g, '\n')
-  html = html.replace(/<h5>/g, 'Heading 5 ').replace(/<\/h5>/g, '\n')
-  html = html.replace(/<h6>/g, 'Heading 6 ').replace(/<\/h6>/g, '\n')
-  html = html.replace(/<p>/g, 'Paragraph ').replace(/<\/p>/g, '\n')
-  html = html.replace(/<ul>/g, 'Unordered List ').replace(/<\/ul>/g, '\n')
-  html = html.replace(/<ol>/g, 'Ordered List ').replace(/<\/ol>/g, '\n')
-  html = html.replace(/<li>/g, 'List Item ').replace(/<\/li>/g, '\n')
-  html = html.replace(/<strong>/g, 'Bold ').replace(/<\/strong>/g, '\n')
-  entry.message.contentHtml = html
+  entry.message.contentHtml = generateReadableTextFromHTML(html)
 }
 
 function readLastAnswer(): void {

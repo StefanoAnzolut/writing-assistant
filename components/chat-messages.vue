@@ -67,20 +67,6 @@ async function collapse(index: number) {
     </div>
     <v-container class="d-flex flex-row justify-end">
       <v-btn
-        v-if="entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) && entry.message.role === 'assistant'"
-        :id="showHtml(entry) ? 'collapseButton' + i : 'expandButton' + i"
-        :icon="showHtml(entry) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-        class="ma-1"
-        color="primary"
-        :aria-label="
-          showHtml(entry)
-            ? `Collapse structure for ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`
-            : `Expand structure for ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`
-        "
-        @click="showHtml(entry) ? collapse(i) : expand(i)"
-        size="small"
-      ></v-btn>
-      <v-btn
         :id="'playPauseButton' + i"
         :icon="entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
         class="ma-1"
@@ -95,12 +81,26 @@ async function collapse(index: number) {
       >
       </v-btn>
       <v-btn
+        v-if="entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) && entry.message.role === 'assistant'"
+        :id="showHtml(entry) ? 'collapseButton' + i : 'expandButton' + i"
+        :icon="showHtml(entry) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+        class="ma-1"
+        color="primary"
+        :aria-label="
+          showHtml(entry)
+            ? `Collapse structure for ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`
+            : `Expand structure for ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`
+        "
+        @click="showHtml(entry) ? collapse(i) : expand(i)"
+        size="small"
+      ></v-btn>
+      <v-btn
         :id="'addToChatEditor' + i"
         icon="mdi-content-paste"
         class="ma-1"
         color="primary"
         @click="$emit('paste', i)"
-        :aria-label="`Add ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))} to chat editor`"
+        :aria-label="`Add ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))} to text editor`"
         size="small"
         v-if="entry.message.role === 'assistant'"
       >
