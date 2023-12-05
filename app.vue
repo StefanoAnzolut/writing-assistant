@@ -71,7 +71,7 @@ const selectedSpeaker = ref('Jenny')
 const voiceSynthesisOnce = ref(false)
 const voiceSynthesisStartOver = ref(false)
 const resynthesizeAudio = ref(false)
-const resynthesizeAudioPlayer = ref({} as AudioPlayer)
+const resynthesizeAudioPlayerId = ref('')
 /** Voice response from ChatGPT */
 const voiceResponse = ref('')
 
@@ -198,7 +198,16 @@ function loadActiveSession() {
   messageInteractionCounter.value = activeSession.value.chatHistory.messages.filter(
     message => message.message.role === 'user'
   ).length
-  chatHistory.messages = activeSession.value.chatHistory.messages
+  editorContent.value = activeSession.value.editorContent
+  sessionLoading.value = true
+  // reverse order
+  if (activeSession.value.chatHistory.messages.length > 0) {
+    if (activeSession.value.chatHistory.messages[0].message.role === 'assistant') {
+      chatHistory.messages = activeSession.value.chatHistory.messages.toReversed()
+    } else {
+      chatHistory.messages = activeSession.value.chatHistory.messages
+    }
+  }
 
   if (chatHistory.messages.length > 0) {
     messages.value = chatHistory.messages.map(message => {
@@ -206,8 +215,6 @@ function loadActiveSession() {
       return message.message
     })
   }
-  editorContent.value = activeSession.value.editorContent
-  sessionLoading.value = true
   muteAllAudioplayers()
 }
 
@@ -343,6 +350,7 @@ function addToChatHistory(message: Message) {
   if (message.role === 'user') {
     messageInteractionCounter.value++
   }
+  // reverse order
   chatHistory.messages.push({
     message: {
       id: Date.now().toString(),
@@ -350,7 +358,12 @@ function addToChatHistory(message: Message) {
       content: addPrefixToContent(message),
       new: true,
     },
-    audioPlayer: { player: new speechsdk.SpeakerAudioDestination(), muted: true, alreadyPlayed: false },
+    audioPlayer: {
+      player: new speechsdk.SpeakerAudioDestination(),
+      id: Date.now().toString(),
+      muted: true,
+      alreadyPlayed: false,
+    },
   } as ChatMessage)
 }
 
@@ -359,10 +372,12 @@ function isLastMessageUser() {
 }
 
 function getLastEntry() {
+  // reverse order
   return chatHistory.messages[getLastEntryIndex()]
 }
 
 function getLastEntryIndex() {
+  // reverse order
   return chatHistory.messages.length - 1
 }
 
@@ -410,6 +425,7 @@ watch(messages, (_): void => {
           role: 'assistant',
           content: '',
         }
+        // Check if we can keep the order for messages
         if (!messages.value[messages.value.length - 1].content.includes('<ai-response>')) {
           newMessage.content = "Understood, I'm generating a structure for you, hold on. This might take a while."
         }
@@ -447,14 +463,16 @@ watch(responseFinished, (_): void => {
     clearInterval(intervalId.value)
     responseFinished.value = false
     voiceSynthesisOnce.value = false
-    let message = chatHistory.messages[chatHistory.messages.length - 1].message
+    // reverse order
+    let message = chatHistory.messages[getLastEntryIndex()].message
     checkHTMLInResponse(message.content)
     if (!voiceResponse.value.includes(message.content)) {
       // TODO: Check how often a plain html body is returned for the edge case
       if (message.content.includes('<ai-response>')) {
         return
       }
-      addToVoiceResponse(chatHistory.messages[chatHistory.messages.length - 1].message.content)
+      // reverse order
+      addToVoiceResponse(chatHistory.messages[getLastEntryIndex()].message.content)
       voiceSynthesisStartOver.value = true
       synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
       focusPauseButton(getLastAssistantResponseIndex())
@@ -477,8 +495,18 @@ watch(readOnly, (_): void => {
 
 watch(resynthesizeAudio, (_): void => {
   if (!resynthesizeAudio.value) {
-    pausePlayer(resynthesizeAudioPlayer.value)
-    resumePlayer(resynthesizeAudioPlayer.value)
+    chatHistory.messages.forEach((message: ChatMessage) => {
+      if (message.audioPlayer.id === resynthesizeAudioPlayerId.value) {
+        pausePlayer(message.audioPlayer)
+        resumePlayer(message.audioPlayer)
+        // Small magic to wait, as internalAudio.duration is not available immediately
+        setTimeout(() => {
+          setTimeout(() => {
+            pausePlayer(message.audioPlayer)
+          }, message.audioPlayer.player.internalAudio.duration * 1000)
+        }, 200)
+      }
+    })
   }
 })
 
@@ -486,9 +514,10 @@ function replaceExpression(assistantResponse: string, expression: RegExp) {
   // const expression = /<ai-response>([\s\S]*?)<\/ai-response>/
   const match = assistantResponse.match(expression)
   if (match && match[1]) {
-    chatHistory.messages[chatHistory.messages.length - 1].message.html = match[1].replace(/>\s+</g, '><')
-    chatHistory.messages[chatHistory.messages.length - 1].message.showHtml = false
-    generateReadableHTML(chatHistory.messages[chatHistory.messages.length - 1])
+    // reverse order
+    chatHistory.messages[getLastEntryIndex()].message.html = match[1].replace(/>\s+</g, '><')
+    chatHistory.messages[getLastEntryIndex()].message.showHtml = false
+    generateReadableHTML(chatHistory.messages[getLastEntryIndex()])
   }
   const parts = assistantResponse.split(expression)
   if (parts.length === 1) {
@@ -661,11 +690,15 @@ function paste(index: number) {
 }
 
 function getLastAssistantResponseIndex(): number {
-  if (messages.value.length === 0) {
+  if (chatHistory.messages.length === 0) {
     throw new Error('Cannot get index when there is no message!')
   }
-  let lastAssistantResponseIndex = messages.value.length - 1
-  while (messages.value[lastAssistantResponseIndex].role !== 'assistant' && lastAssistantResponseIndex > 0) {
+  // reverse order
+  let lastAssistantResponseIndex = getLastEntryIndex()
+  while (
+    chatHistory.messages[lastAssistantResponseIndex].message.role !== 'assistant' &&
+    lastAssistantResponseIndex > 0
+  ) {
     lastAssistantResponseIndex--
   }
   return lastAssistantResponseIndex
@@ -686,7 +719,12 @@ async function focusReadAloudPauseButton() {
 }
 
 function newAudioPlayer(): AudioPlayer {
-  return { player: new speechsdk.SpeakerAudioDestination(), muted: true, alreadyPlayed: false }
+  return {
+    player: new speechsdk.SpeakerAudioDestination(),
+    id: Date.now().toString(),
+    muted: true,
+    alreadyPlayed: false,
+  }
 }
 
 async function setupSpeechConfig(): Promise<speechsdk.SpeechConfig> {
@@ -704,6 +742,7 @@ async function setupSpeechConfig(): Promise<speechsdk.SpeechConfig> {
 }
 
 async function synthesizeSpeech(text: string, index: number) {
+  console.log('Synthesizing speech for index', index)
   if (text === '') {
     return
   }
@@ -736,8 +775,12 @@ async function speak(textToSpeak: string, index: number, player: speechsdk.Speak
           showReadAloudAudioPlayer.value.show = true
           focusReadAloudPauseButton()
         } else if (chatHistory.messages[index].message.role === 'user') {
+          console.log('user index', index)
           // no additional action required for user prompts
         } else if (chatHistory.messages[index].message.role === 'assistant') {
+          console.log('assistant index', index)
+          console.log('index of previous user prompt', chatHistory.messages[index - 1])
+          // reverse order
           if (chatHistory.messages[index - 1].audioPlayer.muted === false) {
             console.log("User hasn't finished listening to the prompt, stop playing the assistant response")
             // Pause the assistant until the user has finished listening to the prompt
@@ -768,19 +811,26 @@ function configureAudioPlayer(index: number): AudioPlayer {
   audioPlayer.player.onAudioEnd = audioPlayer => {
     window.console.log('Audio track ended')
     audioPlayer.pause()
+    // reverse order
     chatHistory.messages[index].audioPlayer.muted = true
     chatHistory.messages[index].audioPlayer.alreadyPlayed = true
-
     // play assistant response after reading the user prompt
+    // reverse order so we focus the same index as we insert at the start with unshift
+    window.console.log('Index', index)
+    window.console.log('Condition check 1', chatHistory.messages[index])
+    window.console.log('Condition check 2', chatHistory.messages[index].message.role === 'assistant')
+    window.console.log('Condition check 3', !chatHistory.messages[index].audioPlayer.alreadyPlayed)
     if (
       chatHistory.messages[index + 1] &&
       chatHistory.messages[index + 1].message.role === 'assistant' &&
       !chatHistory.messages[index + 1].audioPlayer.alreadyPlayed
     ) {
+      // reverse order
       let nextAudioPlayer = getAudioPlayer(index + 1)
       if (nextAudioPlayer.alreadyPlayed === false) {
         nextAudioPlayer.player.resume()
         nextAudioPlayer.muted = false
+        // reverse order
         focusPauseButton(index + 1)
       }
     }
@@ -788,9 +838,11 @@ function configureAudioPlayer(index: number): AudioPlayer {
 
   audioPlayer.player.onAudioStart = () => {
     window.console.log('Audio track started')
+    window.console.log(audioPlayer)
     prevAudioPlayer.value.player.pause()
     let currentTime = prevAudioPlayer.value.player.currentTime
     if (currentTime !== -1 && !voiceSynthesisStartOver.value) {
+      window.console.log('ARE WE GETTING IN HERE??', audioPlayer)
       // round to 2 decimal places
       audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
     }
@@ -817,13 +869,15 @@ function configureReadAloudAudioPlayer(newlyAudioPlayer: AudioPlayer): AudioPlay
 }
 
 function setResponse(response: string) {
-  chatHistory.messages[chatHistory.messages.length - 1].message.content = response
+  // reverse order
+  chatHistory.messages[getLastEntryIndex()].message.content = response
 }
 
 async function focusPauseButton(index: number) {
   if (index < 0) {
     return
   }
+  // reverse order
   if (chatHistory.messages[index].message.role === 'assistant' && !chatHistory.messages[index - 1].audioPlayer.muted) {
     return
   }
@@ -843,6 +897,7 @@ function removeHtmlTags(content: string) {
 function pausePlayer(audioPlayer: AudioPlayer): void {
   audioPlayer.player.pause()
   audioPlayer.muted = true
+  console.log('Pausing player', audioPlayer)
 }
 
 function muteAllAudioplayers(): void {
@@ -856,14 +911,18 @@ function muteAllAudioplayers(): void {
 function resumePlayer(audioPlayer: AudioPlayer): void {
   audioPlayer.player.resume()
   audioPlayer.muted = false
+  audioPlayer.alreadyPlayed = true
+  console.log('Resuming player', audioPlayer)
 }
 
 function handlePause(entry: ChatMessage, index: number) {
   if (!entry.audioPlayer.muted) {
+    console.log('regular pause')
     pausePlayer(entry.audioPlayer)
     return
   }
   if (!entry.message.html) {
+    console.log('regular resume')
     resumePlayer(entry.audioPlayer)
     return
   }
@@ -901,14 +960,15 @@ function pause(entry: ChatMessage, index: number) {
     voiceSynthesisStartOver.value = true
     resynthesizeAudio.value = true
     synthesizeSpeech(entry.message.contentHtml, index)
+    resynthesizeAudioPlayerId.value = chatHistory.messages[index].audioPlayer.id
     voiceResponse.value = entry.message.contentHtml
   } else {
     voiceSynthesisStartOver.value = true
     resynthesizeAudio.value = true
     synthesizeSpeech(entry.message.content, index)
+    resynthesizeAudioPlayerId.value = chatHistory.messages[index].audioPlayer.id
     addToVoiceResponse(entry.message.content)
   }
-  resynthesizeAudioPlayer.value = entry.audioPlayer
 }
 
 function generateReadableHTML(entry: ChatMessage): void {
