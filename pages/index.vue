@@ -788,12 +788,27 @@ async function speak(textToSpeak: string, index: number, player: speechsdk.Speak
       if (resynthesizeAudio.value) {
         resynthesizeAudio.value = false
       }
+      ifUserAnswerIsBeingReadAloud(index)
     },
     function (err) {
       console.log(`Error: ${err}.\n`)
       synthesizer.close()
     }
   )
+}
+
+function ifUserAnswerIsBeingReadAloud(index: number) {
+  if (chatHistory.messages[index].message.role === 'assistant') {
+    // reverse order (user prompt next in list)
+    if (chatHistory.messages[index + 1].audioPlayer.muted === false) {
+      console.log("User hasn't finished listening to the prompt, stop playing the assistant response")
+      // Pause the assistant until the user has finished listening to the prompt
+      chatHistory.messages[index].audioPlayer.player.pause()
+      chatHistory.messages[index].audioPlayer.muted = true
+      return true
+    }
+  }
+  return false
 }
 
 function configureAudioPlayer(index: number): AudioPlayer {
@@ -834,20 +849,16 @@ function configureAudioPlayer(index: number): AudioPlayer {
   }
 
   audioPlayer.player.onAudioStart = () => {
-    // After the synthesizer closes the audio would start playing
-    if (chatHistory.messages[index].message.role === 'assistant') {
-      // reverse order (user prompt next in list)
-      if (chatHistory.messages[index + 1].audioPlayer.muted === false) {
-        console.log("User hasn't finished listening to the prompt, stop playing the assistant response")
-        // Pause the assistant until the user has finished listening to the prompt
-        chatHistory.messages[index].audioPlayer.player.pause()
-        chatHistory.messages[index].audioPlayer.muted = true
-      }
-      return
-    }
     window.console.log('Audio track started')
     // window.console.log(audioPlayer)
     prevAudioPlayer.value.player.pause()
+    if (chatHistory.messages[index].message.role === 'user') {
+      focusPauseButton(index)
+    }
+    const isStillPlaying = ifUserAnswerIsBeingReadAloud(index)
+    if (isStillPlaying) {
+      return
+    }
     let currentTime = prevAudioPlayer.value.player.currentTime
     if (currentTime !== -1 && !voiceSynthesisStartOver.value) {
       window.console.log('ARE WE GETTING IN HERE??', audioPlayer)
