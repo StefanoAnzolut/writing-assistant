@@ -5,12 +5,12 @@ import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
 import type { AsyncComponentLoader } from 'vue'
 import * as Tone from 'tone'
 import type { ChatHistory } from '~/models/ChatHistory'
-import { removeFormElementRoles } from '~/utils/CKEditor'
+import { registerActionsWithSynonyms, removeFormElementRoles } from '~/utils/CKEditor'
 import type { AudioPlayer } from '~/models/AudioPlayer'
 import type { ChatMessage } from '~/models/ChatMessage'
 import type { Session } from '~/models/Session'
 import { generateReadableTextFromHTML } from '~/utils/htmlReader'
-
+const thesaurus = await import('thesaurus')
 onMounted(() => {
   console.log('OnMounted has been called')
   sessions.value = JSON.parse(localStorage.getItem('sessions') || '[]')
@@ -51,6 +51,7 @@ const inputDisabled = ref(false)
 const editorContent = ref('')
 /** A temporary store for the selected text from the text editor for custom questions and easier replacement */
 const selectedText = ref('')
+const selectedTextIntermediate = ref('')
 
 const lastContextMenuAction = ref('')
 
@@ -109,9 +110,7 @@ function onNamespaceLoaded() {
     bottomBar[0].setAttribute('style', 'display: none')
 
     let textAreaElements = document.getElementsByClassName('cke_contents cke_reset')
-    for (let i = 0; i < textAreaElements.length; i++) {
-      textAreaElements[i].setAttribute('style', 'height: 80vh !important;')
-    }
+    textAreaElements[0].setAttribute('style', 'height: 80vh !important;')
   }, 350)
 }
 
@@ -282,6 +281,22 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     synthesizeSpeech(selectedTextFromEditor.replace(/<[^>]*>/g, '\n'), -2)
     removeSelection()
     return
+  } else if (prompt === 'SYNONYMS') {
+    if (selectedText.value.split(' ').length > 2) {
+      synthesizeSpeech(`Please select only one word to find synonyms for.`, -1)
+      removeSelection()
+      return
+    }
+    synthesizeSpeech(`No synonym found for ${selectedText.value}`, -1)
+    removeSelection()
+    return
+  } else if (prompt.includes('Replace with:')) {
+    let synonym = prompt.replace('Replace with:', '')
+    console.log('selectedText', selectedText.value)
+    console.log('synonym', synonym)
+    editorContent.value = editorContent.value.replaceAll(selectedText.value.trim(), synonym)
+    removeSelection()
+    return
   }
   input.value = input.value.concat(prompt + selectedTextFromEditor)
   try {
@@ -325,12 +340,10 @@ function addPrefixToContent(latestMessage) {
 
 function removeCallbackActionPrefix(content: string): string {
   if (
-    content.includes(
-      'the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n'
-    )
+    content.includes('the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n')
   ) {
     content = content.replace(
-      'the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
+      'the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
       ''
     )
   }
@@ -412,7 +425,6 @@ watch(messages, (_): void => {
   let entry = getLastEntry()
   if (entry.message.role === 'user') {
     entry.message.content = removeHtmlTags(entry.message.content)
-    console.log('synthesize user prompt')
     synthesizeSpeech(entry.message.content, getLastEntryIndex())
     setTimeout(() => {
       if (isLastMessageUser()) {
@@ -423,10 +435,9 @@ watch(messages, (_): void => {
         }
         // Check if we can keep the order for messages
         if (!messages.value[messages.value.length - 1].content.includes('<ai-response>')) {
-          newMessage.content = "Understood, I'm generating a structure for you, hold on. This might take a while."
+          newMessage.content = "Understood, I'm processing your prompt, hold on. This might take a while."
         }
         addToChatHistory(newMessage)
-        console.log('synthesize assistant generating structure answer')
         synthesizeSpeech(newMessage.content, getLastEntryIndex())
         voiceSynthesisOnce.value = true
         let tempEntry = getLastEntry()
@@ -511,6 +522,10 @@ watch(resynthesizeAudio, (_): void => {
       }
     })
   }
+})
+
+watch(editor, (_): void => {
+  console.log('Editor reference has been updated')
 })
 
 function replaceExpression(assistantResponse: string, expression: RegExp) {
@@ -677,11 +692,19 @@ function paste(index: number) {
   }
 
   if (isHtml) {
-    synthesizeSpeech('Pasted structured to the text editor.', -1)
+    if (editorContent.value === '') {
+      synthesizeSpeech('Pasted structured to the text editor.', -1)
+    } else {
+      synthesizeSpeech('Replaced structure in the text editor.', -1)
+    }
     editorContent.value = replacementText
     return
   }
-  synthesizeSpeech('Pasted to the text editor and appended at the end.', -1)
+  if (editorContent.value === '') {
+    synthesizeSpeech('Pasted to the text editor.', -1)
+  } else {
+    synthesizeSpeech('Pasted to the text editor and appended at the end.', -1)
+  }
   if (replacementText.toLowerCase().includes('html')) {
     // Special case where html is not identified correctly
     editorContent.value += replacementText
@@ -1052,6 +1075,61 @@ function clearAllDocuments() {
   sessions.value = []
   localStorage.setItem('sessions', JSON.stringify([]))
   createNewDocument()
+}
+
+// function downloadHtml() {
+//   const iframe = document.getElementsByTagName('iframe')[0]
+//   const doc = iframe.contentDocument
+//   // get the body of the doc
+//   const body = doc.getElementsByTagName('body')[0]
+//   // get the html of the body
+//   const src = body.innerHTML
+//   getWordDoc(src)
+// }
+// async function getWordDoc(src: string) {
+//   const { body } = await $fetch('/api/pandoc', {
+//     method: 'post',
+//     body: { html: src },
+//   })
+//   console.log(body)
+// }
+
+// fetch selected text from the text editor every second
+if (process.client) {
+  function getSelectionText() {
+    if (!editor.value) {
+      // editor not loaded yet
+      return
+    }
+    const range = editor.value.getSelection().getRanges()[0]
+    if (range === undefined) {
+      // no selection
+      return
+    }
+    const selected_fragment = range.cloneContents()
+    if (selectedTextIntermediate.value === selected_fragment.getHtml()) {
+      // no need to update if its the same value
+      return
+    }
+    if (selected_fragment.getHtml() === '') {
+      // do not set empty string
+      return
+    }
+    if (selected_fragment.getHtml().split(' ').length > 2) {
+      // only keep single words
+      return
+    }
+    selectedTextIntermediate.value = selected_fragment.getHtml()
+    let synonyms = thesaurus.default.find(selectedTextIntermediate.value.trim())
+    if (synonyms.length === 0) {
+      return
+    }
+    if (synonyms.length > 5) {
+      synonyms = synonyms.slice(0, 5)
+    }
+    registerActionsWithSynonyms(editor.value, submitSelectedCallback, synonyms)
+  }
+  setInterval(getSelectionText, 1000)
 }
 </script>
 

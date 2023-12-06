@@ -8,37 +8,36 @@ export const actions = [
     name: 'checkSpelling',
     label: 'Spell check',
     prompt:
-      '[MODIFICATION_REQUEST]: Spell check\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
+      '[MODIFICATION_REQUEST]: Spell check\n the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
   },
   {
     name: 'summarize',
     label: 'Summarize',
     prompt:
-      '[MODIFICATION_REQUEST]: Summarize\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
+      '[MODIFICATION_REQUEST]: Summarize\n the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
   },
   {
     name: 'simplify',
     label: 'Simplify',
     prompt:
-      '[MODIFICATION_REQUEST]: Simplify\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
+      '[MODIFICATION_REQUEST]: Simplify\n the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
   },
   {
     name: 'findSynonyms',
     label: 'Find synonyms',
-    prompt:
-      '[MODIFICATION_REQUEST]: Find synonyms\n for the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
+    prompt: 'SYNONYMS',
   },
   {
     name: 'reformulate',
     label: 'Formulate differently',
     prompt:
-      '[MODIFICATION_REQUEST]: Reformulate the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
+      '[MODIFICATION_REQUEST]: Reformulate the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
   },
   {
     name: 'concise',
     label: 'Make more concise',
     prompt:
-      '[MODIFICATION_REQUEST]: Make concise\n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
+      '[MODIFICATION_REQUEST]: Make concise\n the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
   },
   {
     name: 'addStructure',
@@ -54,7 +53,7 @@ export const actions = [
     name: 'adaptToScientificStyle',
     label: 'Reformulate to scientific style',
     prompt:
-      '[MODIFICATION_REQUEST]: Adapt to scientific style \n the following content and re-use valid html tags that were given as input. Do not include additional information or headings:\n [USER_INPUT]:\n',
+      '[MODIFICATION_REQUEST]: Adapt to scientific style \n the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
   },
   {
     name: 'askQuestion',
@@ -211,41 +210,50 @@ export function registerActions(
 //   },
 // ]
 
-// function registerActions(editor) {
-//     let contextMenuListener = {}
-//     contextMenu.menuWithSubmenu.forEach(function (group) {
-//       editor.addMenuGroup(group.name)
-//       let groupObj = {
-//         [group.name]: {
-//           label: group.label,
-//           group: group.name,
-//           getItems: function () {
-//             let ItemsObj = {}
-//             group.items.forEach(function (item) {
-//               ItemsObj[item.name] = CKEDITOR.TRISTATE_OFF
-//             })
-//             return ItemsObj
-//           },
-//         },
-//       }
-//       // add each item to the groupObject
-//       group.items.forEach(function (item) {
-//         // create the command we want to reference and add it to the editor instance
-//         editor.addCommand(item.name, {
-//           exec: function (editor) {
-//             submitSelected(new Event('submit'), item.prompt)
-//           },
-//         })
-//         groupObj[item.name] = {
-//           label: item.label,
-//           group: group.name,
-//           command: item.name,
-//         }
-//       })
-//       editor.addMenuItems(groupObj)
-//       contextMenuListener[group.name] = CKEDITOR.TRISTATE_OFF
-//     })
-//     editor.contextMenu.addListener(function (element) {
-//       return contextMenuListener
-//     })
-//   }
+export function registerActionsWithSynonyms(
+  editor: any,
+  submitSelectedCallback: (event: Event, prompt: string, selected_text: string) => void,
+  synonyms: string[] = []
+) {
+  let contextMenuListener = {}
+  actions.forEach(function (action) {
+    if (action.name === 'findSynonyms') {
+      editor.addMenuGroup('thesaurus')
+      let groupObj = {
+        [action.name]: {
+          label: action.label,
+          group: 'thesaurus',
+          getItems: function () {
+            let ItemsObj = {}
+            synonyms.forEach(function (item) {
+              ItemsObj[item] = CKEDITOR.TRISTATE_OFF
+            })
+            return ItemsObj
+          },
+        },
+      }
+      // add each item to the groupObject
+      synonyms.forEach(function (item) {
+        // create the command we want to reference and add it to the editor instance
+        editor.addCommand(item, {
+          exec: function (editor) {
+            const range = editor.getSelection().getRanges()[0]
+            const selected_fragment = range.cloneContents()
+            const selected_text = selected_fragment.getHtml()
+            submitSelectedCallback(new Event('submit'), 'Replace with:' + item, selected_text)
+          },
+        })
+        groupObj[item] = {
+          label: item,
+          group: 'thesaurus',
+          command: item,
+        }
+      })
+      editor.addMenuItems(groupObj)
+      contextMenuListener['thesaurus'] = CKEDITOR.TRISTATE_OFF
+    }
+  })
+  editor.contextMenu.addListener(function (element) {
+    return contextMenuListener
+  })
+}

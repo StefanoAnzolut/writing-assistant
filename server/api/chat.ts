@@ -228,6 +228,9 @@ export default defineLazyEventHandler(async () => {
     let lastMessage = finalMessages[finalMessages.length - 1]
     let isStructureRequest = await checkStructureRequest(lastMessage)
 
+    let response = {}
+    let streaming = true
+
     if (isStructureRequest === true) {
       // data.append({ structureRequest: true })
       const improvedPrompt = await improvePrompt(lastMessage)
@@ -243,13 +246,12 @@ export default defineLazyEventHandler(async () => {
         Thus, I deeply rely on the correct structure.`
       )
       finalMessages[finalMessages.length - 1].content = lastMessage.content
+      response = await askOpenAI(finalMessages, streaming, 'gpt35')
+    } else {
+      response = await askOpenAI(finalMessages, streaming, 'gpt4')
     }
-
-    console.log('The following messages are being sent:\n')
+    console.log('The following messages were sent:\n')
     console.log(finalMessages)
-
-    let streaming = true
-    const response = await askOpenAI(finalMessages, streaming)
 
     const stream = OpenAIStream(response, {
       onFinal() {
