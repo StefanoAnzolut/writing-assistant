@@ -78,6 +78,8 @@ const prevAudioPlayer = ref({} as AudioPlayer)
 /** Read aloud audio player and it's overlay flag */
 const readAloudAudioPlayer = ref({} as AudioPlayer)
 const showReadAloudAudioPlayer = ref({ show: false })
+const directResponseIndex = -1
+const readAloudPlayerIndex = -2
 
 const HTML_EXTRACTION_PLACEHOLDER =
   'Generated a structure. Expand it using the expand button and paste it to the text editor with the paste button.'
@@ -280,22 +282,20 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
   if (selectedTextFromEditor === '') {
     return
   } else if (prompt === 'READ') {
-    synthesizeSpeech(selectedTextFromEditor.replace(/<[^>]*>/g, '\n'), -2)
+    synthesizeSpeech(selectedTextFromEditor.replace(/<[^>]*>/g, '\n'), readAloudPlayerIndex)
     removeSelection()
     return
   } else if (prompt === 'SYNONYMS') {
     if (selectedText.value.split(' ').length > 2) {
-      synthesizeSpeech(`Please select only one word to find synonyms for.`, -1)
+      synthesizeSpeech(`Please select only one word to find synonyms for.`, directResponseIndex)
       removeSelection()
       return
     }
-    synthesizeSpeech(`No synonym found for ${selectedText.value}`, -1)
+    synthesizeSpeech(`No synonym found for ${selectedText.value}`, directResponseIndex)
     removeSelection()
     return
   } else if (prompt.includes('Replace with:')) {
     let synonym = prompt.replace('Replace with:', '')
-    console.log('selectedText', selectedText.value)
-    console.log('synonym', synonym)
     editorContent.value = editorContent.value.replaceAll(selectedText.value.trim(), synonym)
     removeSelection()
     return
@@ -330,13 +330,19 @@ function addPrefixToContent(latestMessage) {
   const matchPrefix = latestMessage.content.match(/Answer (\d+)\n([\s\S]*)/)
   if (matchPrefix) {
     if (matchPrefix[2].includes('Answer')) {
-      console.log('Answer prefix already included', matchPrefix[2])
       return matchPrefix[2]
     } else {
-      console.log('Answer prefix not included', matchPrefix[2])
-      console.log('So we replace it with', `Answer ${messageInteractionCounter.value}\n${matchPrefix[2]}`)
       return `Answer ${messageInteractionCounter.value}\n${matchPrefix[2]}`
     }
+  }
+  if (
+    chatHistory.messages.length > 0 &&
+    chatHistory.messages[chatHistory.messages.length - 1].message.content.includes(latestMessage.content)
+  ) {
+    // Edge case: Due to the normal chronological order of messages from the library and
+    // the reversed order of the chatHistory.messages, it can lead to this edge case.
+    // As the watcher triggers for some reason, this avoids the inconsistency
+    return chatHistory.messages[0].message.content
   }
   return latestMessage.role === 'user'
     ? `Prompt ${messageInteractionCounter.value}\n${latestMessage.content}`
@@ -459,7 +465,6 @@ watch(messages, (_): void => {
       return
     }
     addToVoiceResponse(entry.message.content)
-    console.log('synthesize assistant answer')
     synthesizeSpeech(entry.message.content, getLastAssistantResponseIndex())
     voiceSynthesisOnce.value = true
   }
@@ -527,10 +532,6 @@ watch(resynthesizeAudio, (_): void => {
       }
     })
   }
-})
-
-watch(editor, (_): void => {
-  console.log('Editor reference has been updated')
 })
 
 function replaceExpression(assistantResponse: string, expression: RegExp) {
@@ -603,7 +604,7 @@ async function sttFromMic() {
       speechRecognizer.value.stopContinuousRecognitionAsync()
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
       console.log('NOMATCH: Speech could not be recognized.')
-      synthesizeSpeech('I did not understand or hear you. Stopping recording of your microphone.', -1)
+      synthesizeSpeech('I did not understand or hear you. Stopping recording of your microphone.', directResponseIndex)
       speechRecognizer.value.stopContinuousRecognitionAsync()
     }
   }
@@ -686,9 +687,9 @@ function paste(index: number) {
     editorContent.value = editorContent.value.replace(/>\s+</g, '><').replace(selectedText.value, replacementText)
 
     if (editorContent.value.includes(replacementText)) {
-      synthesizeSpeech('Modified the selected content directly.', -1)
+      synthesizeSpeech('Modified the selected content directly.', directResponseIndex)
     } else {
-      synthesizeSpeech("Couldn't find selection pasting content to end of text editor", -1)
+      synthesizeSpeech("Couldn't find selection pasting content to end of text editor", directResponseIndex)
       editorContent.value += replacementText
       // scrollToBottomTextEditor()
     }
@@ -698,17 +699,15 @@ function paste(index: number) {
 
   if (isHtml) {
     if (editorContent.value === '') {
-      synthesizeSpeech('Pasted structured to the text editor.', -1)
-    } else {
-      synthesizeSpeech('Replaced structure in the text editor.', -1)
+      synthesizeSpeech('Pasted structured to the text editor.', directResponseIndex)
+      editorContent.value += replacementText
     }
-    editorContent.value = replacementText
     return
   }
   if (editorContent.value === '') {
-    synthesizeSpeech('Pasted to the text editor.', -1)
+    synthesizeSpeech('Pasted to the text editor.', directResponseIndex)
   } else {
-    synthesizeSpeech('Pasted to the text editor and appended at the end.', -1)
+    synthesizeSpeech('Pasted to the text editor and appended at the end.', directResponseIndex)
   }
   if (replacementText.toLowerCase().includes('html')) {
     // Special case where html is not identified correctly
@@ -773,16 +772,15 @@ async function setupSpeechConfig(): Promise<speechsdk.SpeechConfig> {
 }
 
 async function synthesizeSpeech(text: string, index: number) {
-  console.log('Synthesizing speech for index', index)
   if (text === '') {
     return
   }
   let audioPlayer = newAudioPlayer()
-  if (index !== -1 && index !== -2) {
+  if (index !== directResponseIndex && index !== readAloudPlayerIndex) {
     prevAudioPlayer.value = getAudioPlayer(index)
     audioPlayer.player = configureAudioPlayer(index).player
     chatHistory.messages[index].audioPlayer = audioPlayer
-  } else if (index === -2) {
+  } else if (index === readAloudPlayerIndex) {
     readAloudAudioPlayer.value = configureReadAloudAudioPlayer(audioPlayer)
   }
   await speak(text, index, audioPlayer.player)
@@ -799,9 +797,9 @@ async function speak(textToSpeak: string, index: number, player: speechsdk.Speak
     result => {
       let text
       if (result.reason === speechsdk.ResultReason.SynthesizingAudioCompleted) {
-        if (index === -1) {
+        if (index === directResponseIndex) {
           // no additional action required for direct responses
-        } else if (index === -2) {
+        } else if (index === readAloudPlayerIndex) {
           showReadAloudAudioPlayer.value.show = true
           focusReadAloudPauseButton()
         }
@@ -826,10 +824,12 @@ async function speak(textToSpeak: string, index: number, player: speechsdk.Speak
 }
 
 function ifUserAnswerIsBeingReadAloud(index: number) {
+  if (index === directResponseIndex || index === readAloudPlayerIndex) {
+    return false
+  }
   if (chatHistory.messages[index].message.role === 'assistant') {
     // reverse order (user prompt next in list)
     if (chatHistory.messages[index + 1].audioPlayer.muted === false) {
-      console.log("User hasn't finished listening to the prompt, stop playing the assistant response")
       // Pause the assistant until the user has finished listening to the prompt
       chatHistory.messages[index].audioPlayer.player.pause()
       chatHistory.messages[index].audioPlayer.muted = true
@@ -888,7 +888,7 @@ function configureAudioPlayer(index: number): AudioPlayer {
       return
     }
     let currentTime = prevAudioPlayer.value.player.currentTime
-    if (currentTime !== -1 && !voiceSynthesisStartOver.value) {
+    if (currentTime !== directResponseIndex && !voiceSynthesisStartOver.value) {
       window.console.log('ARE WE GETTING IN HERE??', audioPlayer)
       // round to 2 decimal places
       audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
@@ -964,17 +964,14 @@ function resumePlayer(audioPlayer: AudioPlayer): void {
   audioPlayer.player.resume()
   audioPlayer.muted = false
   audioPlayer.alreadyPlayed = true
-  console.log('Resuming player', audioPlayer)
 }
 
 function handlePause(entry: ChatMessage, index: number) {
   if (!entry.audioPlayer.muted) {
-    console.log('regular pause')
     pausePlayer(entry.audioPlayer)
     return
   }
   if (!entry.message.html) {
-    console.log('regular resume')
     resumePlayer(entry.audioPlayer)
     return
   }
@@ -1001,6 +998,17 @@ function handlePause(entry: ChatMessage, index: number) {
 }
 
 function pause(entry: ChatMessage, index: number) {
+  // special case for read aloud
+  if (index === readAloudPlayerIndex) {
+    if (!readAloudAudioPlayer.value.muted) {
+      pausePlayer(readAloudAudioPlayer.value)
+      return
+    } else {
+      resumePlayer(readAloudAudioPlayer.value)
+      return
+    }
+  }
+
   // We are working with a new audio player object
   if (typeof entry.audioPlayer.player.pause === 'function') {
     handlePause(entry, index)
@@ -1207,6 +1215,7 @@ function toggleChatHistoryExpanded() {
               :show-read-aloud="showReadAloudAudioPlayer.show"
               :audio-player="readAloudAudioPlayer"
               :read-only="readOnly"
+              :read-aloud-player-index="readAloudPlayerIndex"
               @pause-read-aloud="pause"
               @toggle-read-only="toggleReadOnly"
               @clear-editor-content="clearEditorContent"

@@ -14,6 +14,10 @@ const props = defineProps({
     type: Boolean as PropType<boolean>,
     required: true,
   },
+  readAloudPlayerIndex: {
+    type: Number as PropType<number>,
+    required: true,
+  },
 })
 defineEmits(['pauseReadAloud', 'toggleReadOnly', 'clearEditorContent'])
 </script>
@@ -27,7 +31,7 @@ defineEmits(['pauseReadAloud', 'toggleReadOnly', 'clearEditorContent'])
       class="ma-1"
       :color="props.audioPlayer.muted ? 'success' : 'error'"
       :aria-label="props.audioPlayer.muted ? 'Play' : 'Pause'"
-      @click="$emit('pauseReadAloud', props.audioPlayer)"
+      @click="$emit('pauseReadAloud', props.audioPlayer, props.readAloudPlayerIndex)"
     ></v-btn>
     <v-btn class="ma-1 no-uppercase" color="primary" @click="$emit('toggleReadOnly', readOnly)">Toggle read only</v-btn>
     <v-btn class="ma-1 no-uppercase" color="primary" @click="$emit('clearEditorContent')">Clear text editor</v-btn>
