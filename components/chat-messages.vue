@@ -6,8 +6,16 @@ const props = defineProps({
     type: Array as PropType<ChatMessage[]>,
     required: true,
   },
+  chatHistoryExpanded: {
+    type: Boolean as PropType<boolean>,
+    required: true,
+  },
 })
-defineEmits(['paste', 'pause'])
+defineEmits(['paste', 'pause', 'toggleChatHistory'])
+
+const chatMessages = computed(() => {
+  return props.chatHistoryExpanded ? props.messages : props.messages.slice(0, 2)
+})
 
 const HTML_EXTRACTION_PLACEHOLDER =
   'Generated a structure. Expand it using the expand button and paste it to the text editor with the paste button.'
@@ -39,7 +47,7 @@ async function collapse(index: number) {
 </script>
 <template>
   <div
-    v-for="(entry, i) in props.messages"
+    v-for="(entry, i) in chatMessages"
     :index="i"
     key="m.id"
     class="chat-message ma-2 mx-4"
@@ -107,6 +115,16 @@ async function collapse(index: number) {
       </v-btn>
     </v-container>
   </div>
+  <v-container v-if="!props.chatHistoryExpanded" class="d-flex flex-row justify-center">
+    <v-btn
+      class="ma-1 no-uppercase"
+      color="primary"
+      @click="$emit('toggleChatHistory')"
+      :aria-label="`Expand chat history`"
+    >
+      Expand chat history
+    </v-btn>
+  </v-container>
 </template>
 <style scoped>
 /* Somehow, visibility hidden lead to inconsitent reading order for screen readers.
@@ -147,5 +165,8 @@ https://stackoverflow.com/questions/62107074/how-to-hide-a-text-and-make-it-acce
   margin-inline-start: 0px;
   margin-inline-end: 0px;
   font-weight: bold;
+}
+.no-uppercase {
+  text-transform: unset !important;
 }
 </style>

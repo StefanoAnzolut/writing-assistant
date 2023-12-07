@@ -47,6 +47,8 @@ const activeSession = ref({ id: '', chatHistory: {} as ChatHistory, editorConten
 const chatHistory: ChatHistory = reactive({ messages: [] as ChatMessage[] })
 const messageInteractionCounter = ref(0)
 const inputDisabled = ref(false)
+const chatHistoryExpanded = ref(false)
+
 /** Shared editor content between the user and the writing partner */
 const editorContent = ref('')
 /** A temporary store for the selected text from the text editor for custom questions and easier replacement */
@@ -328,8 +330,11 @@ function addPrefixToContent(latestMessage) {
   const matchPrefix = latestMessage.content.match(/Answer (\d+)\n([\s\S]*)/)
   if (matchPrefix) {
     if (matchPrefix[2].includes('Answer')) {
+      console.log('Answer prefix already included', matchPrefix[2])
       return matchPrefix[2]
     } else {
+      console.log('Answer prefix not included', matchPrefix[2])
+      console.log('So we replace it with', `Answer ${messageInteractionCounter.value}\n${matchPrefix[2]}`)
       return `Answer ${messageInteractionCounter.value}\n${matchPrefix[2]}`
     }
   }
@@ -1131,6 +1136,10 @@ if (process.client) {
   }
   setInterval(getSelectionText, 1000)
 }
+
+function toggleChatHistoryExpanded() {
+  chatHistoryExpanded.value = !chatHistoryExpanded.value
+}
 </script>
 
 <template>
@@ -1163,10 +1172,20 @@ if (process.client) {
                 <form @submit="submit" class="d-flex input pb-2">
                   <chat-input v-model="input" @sttFromMic="sttFromMic" :inputDisabled="inputDisabled" />
                 </form>
-                <chat-messages :messages="chatHistory.messages" @paste="paste" @pause="pause" />
+                <chat-messages
+                  :messages="chatHistory.messages"
+                  :chatHistoryExpanded="chatHistoryExpanded"
+                  @paste="paste"
+                  @pause="pause"
+                  @toggle-chat-history="toggleChatHistoryExpanded"
+                />
               </div>
             </div>
-            <chat-controls @read-last-answer="readLastAnswer" />
+            <chat-controls
+              :chatHistoryExpanded="chatHistoryExpanded"
+              @read-last-answer="readLastAnswer"
+              @toggle-chat-history="toggleChatHistoryExpanded"
+            />
           </div>
         </v-col>
         <v-col :cols="drawer !== true ? 8 : 7">

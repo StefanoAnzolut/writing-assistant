@@ -1,9 +1,24 @@
 <script setup lang="ts">
-defineEmits(['readLastAnswer'])
+const props = defineProps({
+  chatHistoryExpanded: {
+    type: Boolean as PropType<boolean>,
+    required: true,
+  },
+})
+defineEmits(['readLastAnswer', 'toggleChatHistory'])
 </script>
 
 <template>
   <v-container class="d-flex flex-row justify-end read-aloud">
+    <v-btn
+      v-if="props.chatHistoryExpanded"
+      class="ma-1 no-uppercase"
+      color="primary"
+      @click="$emit('toggleChatHistory')"
+      :aria-label="`Expand chat history`"
+    >
+      Collapse chat history</v-btn
+    >
     <v-btn class="ma-1 no-uppercase" color="primary" @click="$emit('readLastAnswer')"> Read last answer</v-btn>
   </v-container>
 </template>
