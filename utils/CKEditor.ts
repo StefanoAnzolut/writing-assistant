@@ -234,15 +234,27 @@ export function registerActionsWithSynonyms(
       }
       // add each item to the groupObject
       synonyms.forEach(function (item) {
-        // create the command we want to reference and add it to the editor instance
-        editor.addCommand(item, {
-          exec: function (editor) {
-            const range = editor.getSelection().getRanges()[0]
-            const selected_fragment = range.cloneContents()
-            const selected_text = selected_fragment.getHtml()
-            submitSelectedCallback(new Event('submit'), 'Replace with:' + item, selected_text)
-          },
-        })
+        if (item !== 'None found') {
+          // create the command we want to reference and add it to the editor instance
+          editor.addCommand(item, {
+            exec: function (editor) {
+              const range = editor.getSelection().getRanges()[0]
+              const selected_fragment = range.cloneContents()
+              const selected_text = selected_fragment.getHtml()
+              submitSelectedCallback(new Event('submit'), 'Replace with:' + item, selected_text)
+            },
+          })
+        } else {
+          editor.addCommand(item, {
+            exec: function (editor) {
+              const range = editor.getSelection().getRanges()[0]
+              const selected_fragment = range.cloneContents()
+              const selected_text = selected_fragment.getHtml()
+              submitSelectedCallback(new Event('submit'), 'No synonyms found', selected_text)
+            },
+          })
+        }
+
         groupObj[item] = {
           label: item,
           group: 'thesaurus',

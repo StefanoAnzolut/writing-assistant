@@ -54,6 +54,7 @@ const editorContent = ref('')
 /** A temporary store for the selected text from the text editor for custom questions and easier replacement */
 const selectedText = ref('')
 const selectedTextIntermediate = ref('')
+const selectedTextProperties = ref({ startOffset: 0, endOffset: 0, context: '' } as any)
 
 const lastContextMenuAction = ref('')
 
@@ -294,9 +295,15 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     synthesizeSpeech(`No synonym found for ${selectedText.value}`, directResponseIndex)
     removeSelection()
     return
+  } else if (prompt === 'No synonyms found') {
+    synthesizeSpeech(`No synonym found for ${selectedText.value}`, directResponseIndex)
+    removeSelection()
+    return
   } else if (prompt.includes('Replace with:')) {
     let synonym = prompt.replace('Replace with:', '')
-    editorContent.value = editorContent.value.replaceAll(selectedText.value.trim(), synonym)
+    let newContent = selectedTextProperties.value.context.replace(selectedText.value.trim(), synonym)
+    editorContent.value = editorContent.value.replace(selectedTextProperties.value.context, newContent)
+    synthesizeSpeech(`Replaced ${selectedText.value} with ${synonym}`, directResponseIndex)
     removeSelection()
     return
   }
@@ -698,10 +705,8 @@ function paste(index: number) {
   }
 
   if (isHtml) {
-    if (editorContent.value === '') {
-      synthesizeSpeech('Pasted structured to the text editor.', directResponseIndex)
-      editorContent.value += replacementText
-    }
+    synthesizeSpeech('Pasted structured to the text editor.', directResponseIndex)
+    editorContent.value += replacementText
     return
   }
   if (editorContent.value === '') {
@@ -1119,6 +1124,11 @@ if (process.client) {
       // no selection
       return
     }
+    selectedTextProperties.value = {
+      startOffset: range.startOffset,
+      endOffset: range.endOffset,
+      context: range.startContainer.$.data,
+    }
     const selected_fragment = range.cloneContents()
     if (selectedTextIntermediate.value === selected_fragment.getHtml()) {
       // no need to update if its the same value
@@ -1135,6 +1145,7 @@ if (process.client) {
     selectedTextIntermediate.value = selected_fragment.getHtml()
     let synonyms = thesaurus.default.find(selectedTextIntermediate.value.trim())
     if (synonyms.length === 0) {
+      registerActionsWithSynonyms(editor.value, submitSelectedCallback, ['None found'])
       return
     }
     if (synonyms.length > 5) {
