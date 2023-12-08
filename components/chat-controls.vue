@@ -5,13 +5,12 @@ const props = defineProps({
     required: true,
   },
 })
-defineEmits(['readLastAnswer', 'toggleChatHistory'])
+defineEmits(['toggleChatHistory'])
 </script>
 
 <template>
-  <v-container class="d-flex flex-row justify-end read-aloud">
+  <v-container v-if="props.chatHistoryExpanded" class="d-flex flex-row justify-center read-aloud">
     <v-btn
-      v-if="props.chatHistoryExpanded"
       class="ma-1 no-uppercase"
       color="primary"
       @click="$emit('toggleChatHistory')"
@@ -19,7 +18,6 @@ defineEmits(['readLastAnswer', 'toggleChatHistory'])
     >
       Collapse chat history</v-btn
     >
-    <v-btn class="ma-1 no-uppercase" color="primary" @click="$emit('readLastAnswer')"> Read last answer</v-btn>
   </v-container>
 </template>
 

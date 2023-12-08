@@ -7,8 +7,11 @@ export const actions = [
   {
     name: 'checkSpelling',
     label: 'Spell check',
-    prompt:
-      '[MODIFICATION_REQUEST]: Spell check\n the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
+    prompt: `[MODIFICATION_REQUEST]: Spell check the following content, re-use valid html tags and provide a numbered list of all corrections made:
+    If no correction are needed, reply with "No corrections were needed". Answer formatting should be as follows:
+    [MODIFIED_USER_INPUT]: {Your answer here}
+    [CORRECTIONS]: {List of corrections here}
+    [USER_INPUT]: `,
   },
   {
     name: 'summarize',

@@ -55,6 +55,7 @@ const editorContent = ref('')
 const selectedText = ref('')
 const selectedTextIntermediate = ref('')
 const selectedTextProperties = ref({ startOffset: 0, endOffset: 0, context: '' } as any)
+const selectedTextPropertiesSynonyms = ref({ startOffset: 0, endOffset: 0, context: '' } as any)
 
 const lastContextMenuAction = ref('')
 
@@ -262,6 +263,16 @@ function submit(e: any): void {
 
 /** Submission wrapper for the callback action of the context menu */
 function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEditor: string) {
+  const range = editor.value.getSelection().getRanges()[0]
+  if (range === undefined) {
+    // no selection
+    return
+  }
+  selectedTextProperties.value = {
+    startOffset: range.startOffset,
+    endOffset: range.endOffset,
+    context: getInnerHTMLForTextSnippetFromRange(range),
+  }
   actions.forEach(action => {
     if (action.prompt === prompt) {
       lastContextMenuAction.value = action.name
@@ -301,8 +312,8 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     return
   } else if (prompt.includes('Replace with:')) {
     let synonym = prompt.replace('Replace with:', '')
-    let newContent = selectedTextProperties.value.context.replace(selectedText.value.trim(), synonym)
-    editorContent.value = editorContent.value.replace(selectedTextProperties.value.context, newContent)
+    let newContent = selectedTextPropertiesSynonyms.value.context.replace(selectedText.value.trim(), synonym)
+    editorContent.value = editorContent.value.replace(selectedTextPropertiesSynonyms.value.context, newContent)
     synthesizeSpeech(`Replaced ${selectedText.value} with ${synonym}`, directResponseIndex)
     removeSelection()
     return
@@ -319,6 +330,21 @@ function removeSelection() {
   selectedText.value = ''
 }
 
+function getInnerHTMLForTextSnippetFromRange(range: any): string {
+  const startContainer = range.startContainer
+  const parentElement = startContainer.$.parentElement
+  return getTextFromParentElement(parentElement)
+}
+
+function getTextFromParentElement(parentElement) {
+  const textSectionParent = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI']
+  if (textSectionParent.some(p => parentElement.tagName.includes(p))) {
+    // replace <br> which can appear out of nowhere for the text editor
+    return decodeHtml(parentElement.outerHTML.replace('<br>', ''))
+  }
+  return getTextFromParentElement(parentElement.parentElement)
+}
+
 /** As we have modified the chat reponse to include the finish_reason to mark the end of the stream. We need to have some pre-processing. */
 function preprocessMessage(message: Message): Message {
   responseFinished.value = isFinished(message.content)
@@ -326,7 +352,31 @@ function preprocessMessage(message: Message): Message {
   message.content = message.content.replace('[MODIFIED]:', '')
   message.content = message.content.replace('[MODIFIED_CONTENT]:', '')
   message.content = message.content.replace('[MODIFICATION_REQUEST]:', '')
+  message.content = message.content.replace('[ASSISTANT]:', '')
+  message.content = message.content.trim()
+  if (message.content.includes('[MODIFIED_USER_INPUT]:') && message.content.includes('[CORRECTIONS]:')) {
+    message.content = handleSpellChecking(message.content)
+  }
+
   return message
+}
+
+function handleSpellChecking(content: string): string {
+  let regex = /\[MODIFIED_USER_INPUT\]:(.*?)\[CORRECTIONS\]:/s
+  let match = content.match(regex)
+  if (match && match[1]) {
+    content = content.replace(match[1], '')
+    if (lastContextMenuAction.value === 'checkSpelling') {
+      handleModificationRequest(match[1].trim())
+      lastContextMenuAction.value = ''
+    }
+  }
+  content = content.replace('[MODIFIED_USER_INPUT]:', '')
+  content = content.replace('[CORRECTIONS]:', '')
+  if (content.includes('[USER_INPUT]')) {
+    content = content.replace(/\[USER_INPUT\](.*)$/s, '')
+  }
+  return content.trim()
 }
 
 function isFinished(message: string) {
@@ -364,7 +414,25 @@ function removeCallbackActionPrefix(content: string): string {
       'the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
       ''
     )
+  } else if (
+    content.includes(
+      `the following content, re-use valid html tags and provide a numbered list of all corrections made:
+    If no correction are needed, reply with "No corrections were needed". Answer formatting should be as follows:
+    [MODIFIED_USER_INPUT]: {Your answer here}
+    [CORRECTIONS]: {List of corrections here}
+    [USER_INPUT]: `
+    )
+  ) {
+    content = content.replace(
+      `the following content, re-use valid html tags and provide a numbered list of all corrections made:
+    If no correction are needed, reply with "No corrections were needed". Answer formatting should be as follows:
+    [MODIFIED_USER_INPUT]: {Your answer here}
+    [CORRECTIONS]: {List of corrections here}
+    [USER_INPUT]: `,
+      ''
+    )
   }
+
   if (content.includes('[MODIFICATION_REQUEST]: ')) {
     content = content.replace('[MODIFICATION_REQUEST]: ', '')
   }
@@ -406,9 +474,6 @@ function getLastEntryIndex() {
   // reverse order
   return 0
 }
-
-// TODO: Why do I need this when asking a question from the text editor to the assistant
-// As the messages are not appendend to the chat history
 
 /** Suggestion text box for the writing partner in the text editor
  * uses the editorContent for the shared state
@@ -495,7 +560,6 @@ watch(responseFinished, (_): void => {
     if (voiceResponse.value.includes(message.content)) {
       return
     }
-    // TODO: Check how often a plain html body is returned for the edge case
     if (message.content.includes('<ai-response>')) {
       return
     }
@@ -677,6 +741,17 @@ function decodeHtml(str: string): string {
   return decodeHtmlCode(decodeHtmlCharCodes(str))
 }
 
+function handleModificationRequest(content: string) {
+  editorContent.value = decodeHtml(editorContent.value)
+  selectedText.value = decodeHtml(selectedText.value)
+  const textReplacementInContext = selectedTextProperties.value.context.replace(selectedText.value, content.trim())
+  editorContent.value = editorContent.value
+    .replace(/>\s+</g, '><')
+    .replace(selectedTextProperties.value.context, decodeHtml(textReplacementInContext))
+  removeSelection()
+  return
+}
+
 function paste(index: number) {
   const matchPrefix = chatHistory.messages[index].message.content.match(/Answer (\d+)\n([\s\S]*)/)
   if (!matchPrefix) {
@@ -689,18 +764,14 @@ function paste(index: number) {
   }
 
   if (IsInlineModification(lastContextMenuAction.value) && selectedText.value !== '') {
-    editorContent.value = decodeHtml(editorContent.value)
-    selectedText.value = decodeHtml(selectedText.value)
-    editorContent.value = editorContent.value.replace(/>\s+</g, '><').replace(selectedText.value, replacementText)
-
-    if (editorContent.value.includes(replacementText)) {
+    handleModificationRequest(replacementText)
+    if (editorContent.value.includes(replacementText.trim())) {
       synthesizeSpeech('Modified the selected content directly.', directResponseIndex)
     } else {
       synthesizeSpeech("Couldn't find selection pasting content to end of text editor", directResponseIndex)
       editorContent.value += replacementText
       // scrollToBottomTextEditor()
     }
-    removeSelection()
     return
   }
 
@@ -1044,19 +1115,6 @@ function generateReadableHTML(entry: ChatMessage): void {
   entry.message.contentHtml = generateReadableTextFromHTML(html)
 }
 
-function readLastAnswer(): void {
-  let lastAssistantResponseIndex = getLastAssistantResponseIndex()
-  if (typeof chatHistory.messages[lastAssistantResponseIndex].audioPlayer.player.resume === 'function') {
-    if (chatHistory.messages[lastAssistantResponseIndex].audioPlayer.alreadyPlayed) {
-      chatHistory.messages[lastAssistantResponseIndex].audioPlayer.player.resume()
-      chatHistory.messages[lastAssistantResponseIndex].audioPlayer.muted = false
-      focusPauseButton(lastAssistantResponseIndex)
-      return
-    }
-  }
-  synthesizeSpeech(chatHistory.messages[lastAssistantResponseIndex].message.content, lastAssistantResponseIndex)
-}
-
 function showDrawer(bool: boolean) {
   drawer.value = bool
 }
@@ -1124,7 +1182,7 @@ if (process.client) {
       // no selection
       return
     }
-    selectedTextProperties.value = {
+    selectedTextPropertiesSynonyms.value = {
       startOffset: range.startOffset,
       endOffset: range.endOffset,
       context: range.startContainer.$.data,
@@ -1202,7 +1260,6 @@ function toggleChatHistoryExpanded() {
             </div>
             <chat-controls
               :chatHistoryExpanded="chatHistoryExpanded"
-              @read-last-answer="readLastAnswer"
               @toggle-chat-history="toggleChatHistoryExpanded"
             />
           </div>
