@@ -120,6 +120,9 @@ function removeExtraComponents() {
 
     let textAreaElements = document.getElementsByClassName('cke_contents cke_reset')
     textAreaElements[0].setAttribute('style', 'height: 80vh !important;')
+
+    let textAreaForm = document.getElementsByTagName('TEXTAREA')
+    textAreaForm[0].remove()
   }, 350)
 }
 
@@ -133,6 +136,9 @@ function removeExtraComponentsWaitLonger() {
 
     let textAreaElements = document.getElementsByClassName('cke_contents cke_reset')
     textAreaElements[0].setAttribute('style', 'height: 80vh !important;')
+
+    let textAreaForm = document.getElementsByTagName('TEXTAREA')
+    textAreaForm[0].remove()
   }, 700)
 }
 
