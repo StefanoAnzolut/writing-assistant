@@ -89,9 +89,8 @@ const HTML_EXTRACTION_PLACEHOLDER =
 const editor = ref({} as any)
 const readOnly = ref(false)
 
-/** Load and set editor from proxy file server,
- *  as there were several issues with providing static files via Nuxt.
- * TODO: Improve how the text editor is loaded */
+/** Load editor configuration from a static file server
+ *  as of right now (Nuxt 3) does not provide such a thing. */
 const editorUrl = 'https://a11y-editor-proxy.fly.dev/ckeditor.js'
 let ckeditor: AsyncComponentLoader
 if (process.client) {
@@ -108,6 +107,10 @@ function onNamespaceLoaded() {
   })
 
   // Element is not yet available, so we need to wait a bit (150 ms should be enough)
+  window.navigator.userAgent.includes('Firefox') ? removeExtraComponentsWaitLonger() : removeExtraComponents()
+}
+
+function removeExtraComponents() {
   setTimeout(() => {
     let toolbar = document.getElementsByClassName('cke_top')
     toolbar[0].setAttribute('style', 'display: none')
@@ -118,6 +121,19 @@ function onNamespaceLoaded() {
     let textAreaElements = document.getElementsByClassName('cke_contents cke_reset')
     textAreaElements[0].setAttribute('style', 'height: 80vh !important;')
   }, 350)
+}
+
+function removeExtraComponentsWaitLonger() {
+  setTimeout(() => {
+    let toolbar = document.getElementsByClassName('cke_top')
+    toolbar[0].setAttribute('style', 'display: none')
+
+    let bottomBar = document.getElementsByClassName('cke_bottom')
+    bottomBar[0].setAttribute('style', 'display: none')
+
+    let textAreaElements = document.getElementsByClassName('cke_contents cke_reset')
+    textAreaElements[0].setAttribute('style', 'height: 80vh !important;')
+  }, 700)
 }
 
 function clearEditorContent() {
@@ -1173,7 +1189,7 @@ function clearAllDocuments() {
 // fetch selected text from the text editor every second
 if (process.client) {
   function getSelectionText() {
-    if (!editor.value) {
+    if (!editor.value || typeof editor.value.getSelection !== 'function') {
       // editor not loaded yet
       return
     }
