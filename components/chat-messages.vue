@@ -65,13 +65,17 @@ async function collapse(index: number) {
       </p>
       <h3 v-if="entry.message.role === 'assistant'">
         {{ removeHtmlTags(entry.message.content.substring(0, entry.message.content.indexOf('\n'))) }}
-        <span class="regular-font-weight" v-if="showHtml(entry)">
-          {{ entry.message.contentHtml }}
-        </span>
-        <span class="regular-font-weight" v-else>
+        <span class="regular-font-weight" v-if="!showHtml(entry)">
           {{ removeHtmlTags(entry.message.content.substring(entry.message.content.indexOf('\n'))) }}
         </span>
       </h3>
+      <div
+        class="regular-font-weight"
+        v-if="showHtml(entry)"
+        v-html="entry.message.html"
+        aria-live="polite"
+        aria-atomic="true"
+      />
     </div>
     <v-container class="d-flex flex-row justify-end">
       <v-btn
@@ -115,7 +119,7 @@ async function collapse(index: number) {
       </v-btn>
     </v-container>
   </div>
-  <v-container v-if="!props.chatHistoryExpanded" class="d-flex flex-row justify-center">
+  <v-container v-if="!props.chatHistoryExpanded && props.messages.length > 2" class="d-flex flex-row justify-center">
     <v-btn
       class="ma-1 no-uppercase"
       color="primary"
