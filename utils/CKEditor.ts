@@ -7,8 +7,9 @@ export const actions = [
   {
     name: 'checkSpelling',
     label: 'Spell check',
-    prompt: `[MODIFICATION_REQUEST]: Spell check the following content, re-use valid html tags and provide a numbered list of all corrections made:
-    If no correction are needed, reply with "No corrections were needed". Answer formatting should be as follows:
+    prompt: `[MODIFICATION_REQUEST]: Spell check the following content, only re-use given html tags and provide a numbered list of all corrections made.
+    If no correction are needed, reply with "No corrections were needed". For every correction say "Corrected {missspelled word} to {correctly spelled word}".
+    Answer formatting should be as follows for this request only:
     [MODIFIED_USER_INPUT]: {Your answer here}
     [CORRECTIONS]: {List of corrections here}
     [USER_INPUT]: `,
@@ -32,31 +33,14 @@ export const actions = [
   },
   {
     name: 'reformulate',
-    label: 'Formulate differently',
+    label: 'Reformulate',
     prompt:
       '[MODIFICATION_REQUEST]: Reformulate the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
-  },
-  {
-    name: 'concise',
-    label: 'Make more concise',
-    prompt:
-      '[MODIFICATION_REQUEST]: Make concise\n the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
   },
   {
     name: 'addStructure',
     label: 'Add structure',
     prompt: '[MODIFICATION_REQUEST]: Add structure to the following content:\n',
-  },
-  {
-    name: 'giveWritingAdvice',
-    label: 'Give scientific writing advice',
-    prompt: 'Give scientific writing advice \n for the following content:',
-  },
-  {
-    name: 'adaptToScientificStyle',
-    label: 'Reformulate to scientific style',
-    prompt:
-      '[MODIFICATION_REQUEST]: Adapt to scientific style \n the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
   },
   {
     name: 'askQuestion',

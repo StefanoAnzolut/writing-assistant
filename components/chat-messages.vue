@@ -18,7 +18,7 @@ const chatMessages = computed(() => {
 })
 
 const HTML_EXTRACTION_PLACEHOLDER =
-  'Generated a structure. Expand it using the expand button and paste it to the text editor with the paste button.'
+  'Generated a structure. Expand it using the expand button and let it be read to you with play or paste it to the text editor directly.'
 
 function removeHtmlTags(content: string) {
   return content.replace(/<[^>]*>/g, '')
@@ -69,13 +69,7 @@ async function collapse(index: number) {
           {{ removeHtmlTags(entry.message.content.substring(entry.message.content.indexOf('\n'))) }}
         </span>
       </h3>
-      <div
-        class="regular-font-weight"
-        v-if="showHtml(entry)"
-        v-html="entry.message.html"
-        aria-live="polite"
-        aria-atomic="true"
-      />
+      <div class="regular-font-weight" v-if="showHtml(entry)" v-html="entry.message.html" />
     </div>
     <v-container class="d-flex flex-row justify-end">
       <v-btn

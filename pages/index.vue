@@ -10,6 +10,7 @@ import type { AudioPlayer } from '~/models/AudioPlayer'
 import type { ChatMessage } from '~/models/ChatMessage'
 import type { Session } from '~/models/Session'
 import { generateReadableTextFromHTML } from '~/utils/htmlReader'
+
 const thesaurus = await import('thesaurus')
 onMounted(() => {
   console.log('OnMounted has been called')
@@ -84,7 +85,7 @@ const directResponseIndex = -1
 const readAloudPlayerIndex = -2
 
 const HTML_EXTRACTION_PLACEHOLDER =
-  'Generated a structure. Expand it using the expand button and paste it to the text editor with the paste button.'
+  'Generated a structure. Expand it using the expand button and let it be read to you with play or paste it to the text editor directly.'
 
 const editor = ref({} as any)
 const readOnly = ref(false)
@@ -106,11 +107,11 @@ function onNamespaceLoaded() {
     editor.value = ck.editor
   })
 
-  // Element is not yet available, so we need to wait a bit (150 ms should be enough)
-  window.navigator.userAgent.includes('Firefox') ? removeExtraComponentsWaitLonger() : removeExtraComponents()
+  // Element is not yet available, so we need to wait a bit (150 ms should be enough but not for Firefox)
+  window.navigator.userAgent.includes('Firefox') ? removeExtraComponents(700) : removeExtraComponents(350)
 }
 
-function removeExtraComponents() {
+function removeExtraComponents(sleepTimer: number = 350) {
   setTimeout(() => {
     let toolbar = document.getElementsByClassName('cke_top')
     toolbar[0].setAttribute('style', 'display: none')
@@ -123,23 +124,7 @@ function removeExtraComponents() {
 
     let textAreaForm = document.getElementsByTagName('TEXTAREA')
     textAreaForm[0].remove()
-  }, 350)
-}
-
-function removeExtraComponentsWaitLonger() {
-  setTimeout(() => {
-    let toolbar = document.getElementsByClassName('cke_top')
-    toolbar[0].setAttribute('style', 'display: none')
-
-    let bottomBar = document.getElementsByClassName('cke_bottom')
-    bottomBar[0].setAttribute('style', 'display: none')
-
-    let textAreaElements = document.getElementsByClassName('cke_contents cke_reset')
-    textAreaElements[0].setAttribute('style', 'height: 80vh !important;')
-
-    let textAreaForm = document.getElementsByTagName('TEXTAREA')
-    textAreaForm[0].remove()
-  }, 700)
+  }, sleepTimer)
 }
 
 function clearEditorContent() {
@@ -265,6 +250,8 @@ function loadActiveSession() {
 function keyDownHandler(event: KeyboardEvent) {
   if (event.code === 'Escape') {
     drawer.value = false
+    // set editor to read only mode
+    // toggleReadOnly(readOnly.value)
   }
 }
 
@@ -300,8 +287,10 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
       lastContextMenuAction.value = action.name
     }
   })
+  console.log(selectedTextFromEditor)
   // Setting the selected text from the text editor to the shared state
-  selectedTextFromEditor = decodeHtmlCode(decodeHtmlCharCodes(selectedTextFromEditor))
+  selectedTextFromEditor = decodeHtml(selectedTextFromEditor)
+  console.log('is this different than above?: ', selectedTextFromEditor)
   selectedText.value = selectedTextFromEditor
   // const selected = window.getSelection()
 
@@ -319,6 +308,8 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     synthesizeSpeech(selectedTextFromEditor.replace(/<[^>]*>/g, '\n'), readAloudPlayerIndex)
     removeSelection()
     return
+  } else if (prompt.includes('[MODIFICATION_REQUEST]: Spell check')) {
+    input.value = input.value.concat(prompt + decodeHtml(selectedTextProperties.value.context))
   } else if (prompt === 'SYNONYMS') {
     if (selectedText.value.split(' ').length > 2) {
       synthesizeSpeech(`Please select only one word to find synonyms for.`, directResponseIndex)
@@ -339,8 +330,9 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     synthesizeSpeech(`Replaced ${selectedText.value} with ${synonym}`, directResponseIndex)
     removeSelection()
     return
+  } else {
+    input.value = input.value.concat(prompt + selectedTextFromEditor)
   }
-  input.value = input.value.concat(prompt + selectedTextFromEditor)
   try {
     handleSubmit(event)
   } catch (e) {
@@ -353,13 +345,20 @@ function removeSelection() {
 }
 
 function getInnerHTMLForTextSnippetFromRange(range: any): string {
-  const startContainer = range.startContainer
-  const parentElement = startContainer.$.parentElement
-  return getTextFromParentElement(parentElement)
+  console.log(range)
+  const outerHtmlStart = getTextFromParentElement(range.startContainer.$.parentElement)
+  const outerHtmlEnd = getTextFromParentElement(range.endContainer.$.parentElement)
+  let documentInner = range.document.$.body.innerHTML
+  let outerHtmlForRange = documentInner.substring(
+    documentInner.indexOf(outerHtmlStart),
+    documentInner.lastIndexOf(outerHtmlEnd) + outerHtmlEnd.length
+  )
+  // remove html char codes and symbols that appear when copy pasting from different locations
+  return decodeHtml(outerHtmlForRange)
 }
 
 function getTextFromParentElement(parentElement) {
-  const textSectionParent = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI']
+  const textSectionParent = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL']
   if (textSectionParent.some(p => parentElement.tagName.includes(p))) {
     // replace <br> which can appear out of nowhere for the text editor
     return decodeHtml(parentElement.outerHTML.replace('<br>', ''))
@@ -438,16 +437,18 @@ function removeCallbackActionPrefix(content: string): string {
     )
   } else if (
     content.includes(
-      `the following content, re-use valid html tags and provide a numbered list of all corrections made:
-    If no correction are needed, reply with "No corrections were needed". Answer formatting should be as follows:
+      `only re-use given html tags and provide a numbered list of all corrections made.
+    If no correction are needed, reply with "No corrections were needed". For every correction say "Corrected {missspelled word} to {correctly spelled word}".
+    Answer formatting should be as follows for this request only:
     [MODIFIED_USER_INPUT]: {Your answer here}
     [CORRECTIONS]: {List of corrections here}
     [USER_INPUT]: `
     )
   ) {
     content = content.replace(
-      `the following content, re-use valid html tags and provide a numbered list of all corrections made:
-    If no correction are needed, reply with "No corrections were needed". Answer formatting should be as follows:
+      `only re-use given html tags and provide a numbered list of all corrections made.
+    If no correction are needed, reply with "No corrections were needed". For every correction say "Corrected {missspelled word} to {correctly spelled word}".
+    Answer formatting should be as follows for this request only:
     [MODIFIED_USER_INPUT]: {Your answer here}
     [CORRECTIONS]: {List of corrections here}
     [USER_INPUT]: `,
@@ -529,6 +530,7 @@ watch(messages, (_): void => {
   }
   let entry = getLastEntry()
   if (entry.message.role === 'user') {
+    console.log('User Prompt')
     entry.message.content = removeHtmlTags(entry.message.content)
     synthesizeSpeech(entry.message.content, getLastEntryIndex())
     setTimeout(() => {
@@ -548,12 +550,13 @@ watch(messages, (_): void => {
         let tempEntry = getLastEntry()
         tempEntry.message.new = false
       }
-      focusPauseButton(getLastAssistantResponseIndex())
+      // focusPauseButton(getLastAssistantResponseIndex())
     }, 5000)
     return
   }
+  console.log('Assistant Answer')
   checkHTMLInResponse(addPrefixToContent(message))
-  if (entry.message.content.length > 25 && entry.message.new === true) {
+  if (entry.message.content.length > 250 && entry.message.new === true) {
     entry.message.new = false
     if (entry.message.content.includes('<ai-response>') || entry.message.content.includes('<body>')) {
       return
@@ -587,7 +590,8 @@ watch(responseFinished, (_): void => {
     }
     // reverse order
     addToVoiceResponse(chatHistory.messages[getLastEntryIndex()].message.content)
-    voiceSynthesisStartOver.value = true
+    // continue where we left off, do not start over
+    voiceSynthesisStartOver.value = false
     synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
 
     // if the user prompt is still being played do not focus on the pause button of the assistant response
@@ -632,7 +636,7 @@ function replaceExpression(assistantResponse: string, expression: RegExp) {
   const match = assistantResponse.match(expression)
   if (match && match[1]) {
     // reverse order
-    chatHistory.messages[getLastEntryIndex()].message.html = match[1].replace(/>\s+</g, '><')
+    chatHistory.messages[getLastEntryIndex()].message.html = match[1].replace(/>\s+|\s+</g, m => m.trim())
     chatHistory.messages[getLastEntryIndex()].message.showHtml = false
     generateReadableHTML(chatHistory.messages[getLastEntryIndex()])
   }
@@ -760,18 +764,42 @@ function isHtmlAlreadyExtracted(assistantResponse: string): boolean {
 }
 
 function decodeHtml(str: string): string {
-  return decodeHtmlCode(decodeHtmlCharCodes(str))
+  //pre-processing:
+  // remove char codes
+  // remove html codes
+  // filter out href link with attribute data-cke-saved-href
+  return decodeHtmlCode(decodeHtmlCharCodes(str)).replace(/ data-cke-saved-href="[^"]*"/g, '')
 }
 
 function handleModificationRequest(content: string) {
   editorContent.value = decodeHtml(editorContent.value)
   selectedText.value = decodeHtml(selectedText.value)
-  const textReplacementInContext = selectedTextProperties.value.context.replace(selectedText.value, content.trim())
+  let textReplacementInContext = ''
+  if (lastContextMenuAction.value === 'checkSpelling') {
+    textReplacementInContext = selectedTextProperties.value.context.replace(
+      selectedTextProperties.value.context,
+      content.trim()
+    )
+  } else {
+    console.log('selectedTextProperties.value.context:', selectedTextProperties.value.context)
+    console.log('Selected text:', selectedText.value)
+    console.log('inlcudes:', selectedTextProperties.value.context.includes(selectedText.value))
+    textReplacementInContext = selectedTextProperties.value.context.replace(selectedText.value, content.trim())
+  }
+  console.log('textReplacementInContext:', textReplacementInContext)
+  console.log('selectedTextProperties.value.context:', selectedTextProperties.value.context)
+  console.log(
+    'editorContent.value:',
+    editorContent.value.replace(/>\s+|\s+</g, m => m.trim())
+  )
+  console.log(
+    'includes:',
+    editorContent.value.replace(/>\s+|\s+</g, m => m.trim()).includes(selectedTextProperties.value.context)
+  )
   editorContent.value = editorContent.value
-    .replace(/>\s+</g, '><')
+    .replace(/>\s+|\s+</g, m => m.trim())
     .replace(selectedTextProperties.value.context, decodeHtml(textReplacementInContext))
   removeSelection()
-  return
 }
 
 function paste(index: number) {
@@ -779,15 +807,18 @@ function paste(index: number) {
   if (!matchPrefix) {
     return
   }
-  let replacementText = matchPrefix[2]
+  let replacementText = decodeHtml(matchPrefix[2])
   const isHtml = isHtmlAlreadyExtracted(replacementText)
   if (isHtml) {
-    replacementText = chatHistory.messages[index].message.html
+    replacementText = decodeHtml(chatHistory.messages[index].message.html)
   }
-
   if (IsInlineModification(lastContextMenuAction.value) && selectedText.value !== '') {
     handleModificationRequest(replacementText)
-    if (editorContent.value.includes(replacementText.trim())) {
+    console.log('PASTE___')
+    console.log('editorContent:', editorContent.value)
+    console.log('replacementText:', replacementText.trim())
+    console.log('includes:', editorContent.value.trim().includes(replacementText.trim()))
+    if (editorContent.value.trim().includes(replacementText.trim())) {
       synthesizeSpeech('Modified the selected content directly.', directResponseIndex)
     } else {
       synthesizeSpeech("Couldn't find selection pasting content to end of text editor", directResponseIndex)
@@ -805,6 +836,7 @@ function paste(index: number) {
   if (editorContent.value === '') {
     synthesizeSpeech('Pasted to the text editor.', directResponseIndex)
   } else {
+    console.log('pasted to the text editor and appended at the end')
     synthesizeSpeech('Pasted to the text editor and appended at the end.', directResponseIndex)
   }
   if (replacementText.toLowerCase().includes('html')) {
@@ -976,17 +1008,21 @@ function configureAudioPlayer(index: number): AudioPlayer {
 
   audioPlayer.player.onAudioStart = () => {
     window.console.log('Audio track started')
+    window.console.log('Index', index)
     // window.console.log(audioPlayer)
     prevAudioPlayer.value.player.pause()
     if (chatHistory.messages[index].message.role === 'user') {
+      window.console.log('This should be a user index:', index)
+      window.console.log(chatHistory.messages[index])
       focusPauseButton(index)
     }
     const isStillPlaying = ifUserAnswerIsBeingReadAloud(index)
     if (isStillPlaying) {
+      focusPauseButton(index + 1)
       return
     }
     let currentTime = prevAudioPlayer.value.player.currentTime
-    if (currentTime !== directResponseIndex && !voiceSynthesisStartOver.value) {
+    if (currentTime !== -1 && !voiceSynthesisStartOver.value) {
       window.console.log('ARE WE GETTING IN HERE??', audioPlayer)
       // round to 2 decimal places
       audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
@@ -995,12 +1031,6 @@ function configureAudioPlayer(index: number): AudioPlayer {
       voiceSynthesisStartOver.value = false
     }
     chatHistory.messages[index].audioPlayer.muted = false
-    if (chatHistory.messages[index].message.role === 'assistant') {
-      focusPauseButton(index)
-    } else {
-      // we already received an assistant response so the index shifts by 1
-      focusPauseButton(index + 1)
-    }
   }
   return audioPlayer
 }
@@ -1034,6 +1064,7 @@ async function focusPauseButton(index: number) {
 
   await nextTick()
   // nextTick() to update DOM and show Overlay before focusing on the pause button
+  console.log('Focusing on the pause button on this index: ', index)
   let playPauseButton = document.getElementById('playPauseButton' + index)
   if (playPauseButton) {
     playPauseButton.focus()
@@ -1050,15 +1081,25 @@ function pausePlayer(audioPlayer: AudioPlayer): void {
   console.log('Pausing player', audioPlayer)
 }
 
+function validAudioPlayer(audioPlayer: AudioPlayer): boolean {
+  return audioPlayer && audioPlayer.player && typeof audioPlayer.player.pause === 'function'
+}
+
 function muteAllAudioplayers(): void {
   chatHistory.messages.forEach((message: ChatMessage) => {
-    if (message.audioPlayer && !message.audioPlayer.muted) {
+    if (message.audioPlayer && !message.audioPlayer.muted && validAudioPlayer(message.audioPlayer)) {
+      message.audioPlayer.player.pause()
       message.audioPlayer.muted = true
     }
   })
+  if (readAloudAudioPlayer.value && !readAloudAudioPlayer.value.muted && validAudioPlayer(readAloudAudioPlayer.value)) {
+    readAloudAudioPlayer.value.player.pause()
+    readAloudAudioPlayer.value.muted = true
+  }
 }
 
 function resumePlayer(audioPlayer: AudioPlayer): void {
+  muteAllAudioplayers()
   audioPlayer.player.resume()
   audioPlayer.muted = false
   audioPlayer.alreadyPlayed = true
@@ -1108,7 +1149,7 @@ function pause(entry: ChatMessage, index: number) {
   }
 
   // We are working with a new audio player object
-  if (typeof entry.audioPlayer.player.pause === 'function') {
+  if (validAudioPlayer(entry.audioPlayer)) {
     handlePause(entry, index)
     return
   }
