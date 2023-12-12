@@ -18,7 +18,7 @@ const chatMessages = computed(() => {
 })
 
 const HTML_EXTRACTION_PLACEHOLDER =
-  'Generated a structure. Expand it using the expand button and let it be read to you with play or paste it to the text editor directly.'
+  'Generated a structured response. Expand it using the expand button and let it be read to you with play or paste it to the text editor directly.'
 
 function removeHtmlTags(content: string) {
   return content.replace(/<[^>]*>/g, '')

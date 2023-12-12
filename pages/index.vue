@@ -85,7 +85,7 @@ const directResponseIndex = -1
 const readAloudPlayerIndex = -2
 
 const HTML_EXTRACTION_PLACEHOLDER =
-  'Generated a structure. Expand it using the expand button and let it be read to you with play or paste it to the text editor directly.'
+  'Generated a structured response. Expand it using the expand button and let it be read to you with play or paste it to the text editor directly.'
 
 const editor = ref({} as any)
 const readOnly = ref(false)
@@ -261,7 +261,8 @@ function submit(e: any): void {
     input.value = input.value.concat(editorContent.value)
   }
   if (selectedText.value !== '') {
-    input.value = input.value.concat(selectedText.value)
+    input.value = input.value.concat('<text>' + selectedText.value + '</text>')
+    selectedText.value = ''
   }
   handleSubmit(e)
   inputDisabled.value = true
@@ -290,7 +291,6 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
   console.log(selectedTextFromEditor)
   // Setting the selected text from the text editor to the shared state
   selectedTextFromEditor = decodeHtml(selectedTextFromEditor)
-  console.log('is this different than above?: ', selectedTextFromEditor)
   selectedText.value = selectedTextFromEditor
   // const selected = window.getSelection()
 
@@ -300,6 +300,7 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     if (chatInput) {
       chatInput.focus()
     }
+    synthesizeSpeech('Stored the selected text, continue with asking your question!', directResponseIndex)
     return
   }
   if (selectedTextFromEditor === '') {
@@ -331,6 +332,9 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     removeSelection()
     return
   } else {
+    console.log('Normal callback flow')
+    console.log('selectedTextFromEditor:', selectedTextFromEditor)
+    console.log('prompt:', prompt)
     input.value = input.value.concat(prompt + selectedTextFromEditor)
   }
   try {
@@ -345,7 +349,14 @@ function removeSelection() {
 }
 
 function getInnerHTMLForTextSnippetFromRange(range: any): string {
+  const startContainerParent = range.startContainer.$.parentElement
+  const endContainerParent = range.endContainer.$.parentElement
   console.log(range)
+  console.log(startContainerParent.isEqualNode(endContainerParent))
+  if (startContainerParent.isEqualNode(endContainerParent)) {
+    return decodeHtml(startContainerParent.outerHTML.replace('<br>', ''))
+  }
+
   const outerHtmlStart = getTextFromParentElement(range.startContainer.$.parentElement)
   const outerHtmlEnd = getTextFromParentElement(range.endContainer.$.parentElement)
   let documentInner = range.document.$.body.innerHTML
@@ -364,6 +375,11 @@ function getTextFromParentElement(parentElement) {
     return decodeHtml(parentElement.outerHTML.replace('<br>', ''))
   }
   return getTextFromParentElement(parentElement.parentElement)
+}
+
+function preprocessUserMessage(message: Message): Message {
+  message.content = message.content.replace('<text>', '').replace('</text>', '')
+  return message
 }
 
 /** As we have modified the chat reponse to include the finish_reason to mark the end of the stream. We need to have some pre-processing. */
@@ -524,6 +540,9 @@ watch(messages, (_): void => {
   let message = messages.value[messages.value.length - 1]
   if (message.role === 'assistant') {
     message = preprocessMessage(message)
+  }
+  if (message.role === 'user') {
+    message = preprocessUserMessage(message)
   }
   if (chatHistory.messages.length < messages.value.length) {
     addToChatHistory(message)
@@ -977,7 +996,9 @@ function configureAudioPlayer(index: number): AudioPlayer {
     // reverse order
     chatHistory.messages[index].audioPlayer.muted = true
     chatHistory.messages[index + 1].audioPlayer.muted = true
-
+    if (chatHistory.messages[index].message.role === 'user') {
+      chatHistory.messages[index].audioPlayer.alreadyPlayed = true
+    }
     // if (chatHistory.messages[index].message.role === 'assistant') {
     //   chatHistory.messages[index].audioPlayer.muted = true
     //   chatHistory.messages[index].audioPlayer.alreadyPlayed = true
@@ -1000,10 +1021,10 @@ function configureAudioPlayer(index: number): AudioPlayer {
       let nextAudioPlayer = getAudioPlayer(0)
       nextAudioPlayer.player.resume()
       nextAudioPlayer.muted = false
+      chatHistory.messages[0].audioPlayer.alreadyPlayed = true
       // reverse order
       focusPauseButton(0)
     }
-    chatHistory.messages[index].audioPlayer.alreadyPlayed = true
   }
 
   audioPlayer.player.onAudioStart = () => {
