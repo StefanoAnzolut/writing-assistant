@@ -91,17 +91,12 @@ async function checkStructureRequest(message: Message) {
     'manuscript',
     'chapter',
     'essay',
-    'letter',
-    'email',
     'document',
-    'text',
     'writing',
     'composition',
-    'piece',
     'work',
     'publication',
     'journal',
-    'newspaper',
   ]
   let systemPrompt = `You are an agent that preprocesses messages and identifies whether the request is asking for support of academic writing.
     This includes any help with the following: ${keywords.join(', ')}
@@ -141,8 +136,8 @@ async function improvePrompt(message: Message) {
   // Rewritten by GPT-4
   // 3. GPT-4 Example as reference point
   let systemPrompt = `
-  You are now tasked to improve the current prompt to make it more accurate and detailed. Only update the current prompt and return it.
-
+  You are now tasked to improve the current prompt to make it more accurate and detailed. Only update the current prompt, avoid modifiyng the intent of the request, if uncertain rather keep the same prompt, than changing its intent. Next, consider the context for additional help but also consider different information.
+  <Relevant context for the prompt>
   When reviewers are deciding on whether to accept manuscripts for publication, they prioritize the following five key criteria:
   1) The significance, current relevance, applicability, and commonality of the issue being addressed
   2) The caliber of the manuscript's writing style, ensuring that it's well-articulated, clear, direct, easy to comprehend, and logical
@@ -199,6 +194,7 @@ async function improvePrompt(message: Message) {
     •	Cite all sources used following the appropriate citation style (e.g., APA, MLA, Chicago).
     •	Ensure consistency and accuracy in formatting.
     By adhering to this comprehensive structure, your research paper will be well-organized, logically coherent, and demonstrate a thorough understanding of the subject matter. Happy writing!
+    </Relevant context for the prompt>
     Below is the user request that you need to improve:
     `
   let messages = [
