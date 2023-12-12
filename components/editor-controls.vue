@@ -34,7 +34,16 @@ defineEmits(['pauseReadAloud', 'toggleReadOnly', 'clearEditorContent'])
       @click="$emit('pauseReadAloud', props.audioPlayer, props.readAloudPlayerIndex)"
       size="small"
     ></v-btn>
-    <v-btn class="ma-1 no-uppercase" color="primary" @click="$emit('toggleReadOnly', readOnly)">Toggle read only</v-btn>
+    <v-btn
+      v-if="props.readOnly === true"
+      class="ma-1 no-uppercase"
+      color="primary"
+      @click="$emit('toggleReadOnly', readOnly)"
+      >Deactivate read only</v-btn
+    >
+    <v-btn v-else class="ma-1 no-uppercase" color="primary" @click="$emit('toggleReadOnly', readOnly)"
+      >Activate read only</v-btn
+    >
     <v-btn class="ma-1 no-uppercase" color="primary" @click="$emit('clearEditorContent')">Clear text editor</v-btn>
   </v-container>
 </template>
