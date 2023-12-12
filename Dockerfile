@@ -20,6 +20,9 @@ FROM base as build
 RUN apt-get update -qq && \
     apt-get install -y build-essential pkg-config python-is-python3
 
+# Install pandoc
+RUN apt-get update && apt-get install -y pandoc
+
 # Install node modules
 COPY --link package-lock.json package.json ./
 RUN npm ci --include=dev

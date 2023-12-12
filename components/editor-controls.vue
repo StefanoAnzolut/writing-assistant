@@ -19,11 +19,12 @@ const props = defineProps({
     required: true,
   },
 })
-defineEmits(['pauseReadAloud', 'toggleReadOnly', 'clearEditorContent'])
+defineEmits(['pauseReadAloud', 'toggleReadOnly', 'clearEditorContent', 'downloadWord'])
 </script>
 
 <template>
   <v-container class="d-flex flex-row justify-end read-aloud">
+    <v-btn class="ma-1 no-uppercase" color="primary" @click="$emit('downloadWord')">Download as word</v-btn>
     <v-btn
       v-if="props.showReadAloud"
       id="playPauseButtonReadAloud"

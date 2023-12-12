@@ -1,106 +1,91 @@
-// import { stat } from 'fs'
-// import { spawn } from 'child_process'
-// import { platform } from 'os'
+import * as fs from 'fs'
+import { spawn } from 'child_process'
 
-// export function pandoc(src, args, callback) {
-//   let options
-//   let pdSpawn
-//   let result = ''
-//   let isURL
+export function pandoc(src, args): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let options
+    let pdSpawn
+    let result = ''
 
-//   // Event Handlers
-//   let onStdOutData
-//   let onStdOutEnd
-//   let onStdErrData
-//   let onStatCheck
+    let onStdOutData
+    let onStdOutEnd
+    let onStdErrData
+    let onStatCheck
 
-//   isURL = function (src) {
-//     return /^(https?|ftp):\/\//i.test(src)
-//   }
+    onStdOutData = function (data) {
+      result += data
+    }
 
-//   onStdOutData = function (data) {
-//     result += data
-//   }
+    onStdOutEnd = function () {
+      resolve(result || true)
+    }
 
-//   onStdOutEnd = function () {
-//     callback(null, result || true)
-//   }
+    onStdErrData = function (err) {
+      reject(new Error(err))
+    }
 
-//   onStdErrData = function (err) {
-//     callback(new Error(err))
-//   }
+    onStatCheck = function (err, stats) {
+      if (stats && stats.isFile()) {
+        args.unshift(src)
+      }
 
-//   onStatCheck = function (err, stats) {
-//     // If src is a file or valid web URL, push the src back into args array
-//     if ((stats && stats.isFile()) || isURL) {
-//       args.unshift(src)
-//     }
+      pdSpawn = spawn('pandoc', args, options)
 
-//     // Create child_process.spawn
-//     pdSpawn = spawn('pandoc', args, options)
+      if (typeof stats === 'undefined') {
+        pdSpawn.stdin.end(src, 'utf-8')
+      }
 
-//     // If src is not a file, assume a string input.
-//     if (typeof stats === 'undefined' && !isURL) {
-//       pdSpawn.stdin.end(src, 'utf-8')
-//     }
+      pdSpawn.stdout.on('data', onStdOutData)
+      pdSpawn.stdout.on('end', onStdOutEnd)
+      pdSpawn.stderr.on('data', onStdErrData)
+    }
 
-//     // Set handlers...
-//     pdSpawn.stdout.on('data', onStdOutData)
-//     pdSpawn.stdout.on('end', onStdOutEnd)
-//     pdSpawn.stderr.on('data', onStdErrData)
-//   }
+    args = Array.prototype.slice.call(arguments)
+    src = args.shift()
 
-//   // Convert arguments to actual array.
-//   args = Array.prototype.slice.call(arguments)
-//   // Save src out of the args array.
-//   src = args.shift()
-//   // Check if src is URL match.
-//   isURL = isURL(src)
-//   // Save the callback out of the args array.
-//   callback = args.pop()
+    if (args.length == 2 && args[1].constructor !== Array) {
+      options = args.pop()
+    }
 
-//   // At this point, args array should be atlest .length
-//   // of 1. If .length is 2, we have an Options object.
-//   if (args.length == 2 && args[1].constructor !== Array) {
-//     options = args.pop()
-//   }
+    args = args.shift()
 
-//   // Pull only remaining element from
-//   // the args Array and overwrite itself.
-//   args = args.shift()
+    if (args.constructor === String) {
+      args = args.split(' ')
+    }
 
-//   // Array of arguments are required for PanDoc.
-//   // If arguments are in String format, convert
-//   // them to an array to use
-//   // in the child_process.spawn() call.
-//   if (args.constructor === String) {
-//     args = args.split(' ')
-//   }
+    fs.stat(src, onStatCheck)
+  })
+}
 
-//   // Check file status of src
-//   stat(src, onStatCheck)
-// }
+export default defineEventHandler(async event => {
+  let body = ''
+  for await (const chunk of event.node.req) {
+    body += chunk
+  }
 
-// export default defineEventHandler(async event => {
-//   const body = await readBody(event)
-//   const src = body.html
-//   console.log(typeof src)
-//   const args = '-f html -t docx -o word.docx'
-//   console.log('src: ' + src)
-//   console.log('args: ' + args)
+  const { html } = JSON.parse(body)
 
-//   var out = spawn('which' + ' pandoc', ['/?'], { encoding: 'utf8' })
+  const src = html
+  const args = '-f html -t docx -o word.docx'
 
-//   out.on('close', function (code) {
-//     console.log('exit code : ' + code)
-//   })
+  try {
+    // Pandoc saves content to file, and we read it back
+    // But as pandoc is async we need to wait for it to finish so we use await and async
+    // this makes it synchronous but now we can read from the file directly
 
-//   // Set your callback function
-//   const callback = function (err, result) {
-//     if (err) console.error('Oh Nos: ', err)
-//     // Without the -o arg, the converted value will be returned.
-//     return console.log(result), result
-//   }
-//   pandoc(src, args, callback)
-//   return { src }
-// })
+    const response = await pandoc(src, args)
+    console.log('response: ', response)
+    let fileBuffer = fs.readFileSync('./word.docx')
+
+    // Convert the Buffer to a base64 string
+    let base64EncodedDocument = fileBuffer.toString('base64')
+    return {
+      blob:
+        'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64, ' + base64EncodedDocument,
+    }
+  } catch (error) {
+    // Handle any errors that occurred while running the pandoc function
+    console.error('Error while converting document:', error)
+    throw error
+  }
+})

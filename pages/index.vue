@@ -840,7 +840,7 @@ function paste(index: number) {
     if (editorContent.value.trim().includes(replacementText.trim())) {
       synthesizeSpeech('Modified the selected content directly.', directResponseIndex)
     } else {
-      synthesizeSpeech("Couldn't find selection pasting content to end of text editor", directResponseIndex)
+      synthesizeSpeech('Pasting content to end of text editor', directResponseIndex)
       editorContent.value += replacementText
       // scrollToBottomTextEditor()
     }
@@ -925,12 +925,14 @@ async function synthesizeSpeech(text: string, index: number) {
     return
   }
   let audioPlayer = newAudioPlayer()
-  if (index !== directResponseIndex && index !== readAloudPlayerIndex) {
+  if (index === directResponseIndex) {
+    muteAllAudioplayers()
+  } else if (index === readAloudPlayerIndex) {
+    readAloudAudioPlayer.value = configureReadAloudAudioPlayer(audioPlayer)
+  } else {
     prevAudioPlayer.value = getAudioPlayer(index)
     audioPlayer.player = configureAudioPlayer(index).player
     chatHistory.messages[index].audioPlayer = audioPlayer
-  } else if (index === readAloudPlayerIndex) {
-    readAloudAudioPlayer.value = configureReadAloudAudioPlayer(audioPlayer)
   }
   await speak(text, index, audioPlayer.player)
 }
@@ -1237,22 +1239,58 @@ function clearAllDocuments() {
   createNewDocument()
 }
 
-// function downloadHtml() {
-//   const iframe = document.getElementsByTagName('iframe')[0]
-//   const doc = iframe.contentDocument
-//   // get the body of the doc
-//   const body = doc.getElementsByTagName('body')[0]
-//   // get the html of the body
-//   const src = body.innerHTML
-//   getWordDoc(src)
-// }
-// async function getWordDoc(src: string) {
-//   const { body } = await $fetch('/api/pandoc', {
-//     method: 'post',
-//     body: { html: src },
-//   })
-//   console.log(body)
-// }
+function downloadWord() {
+  const iframe = document.getElementsByTagName('iframe')[0]
+  const doc = iframe.contentDocument
+  // get the body of the doc
+  const body = doc.getElementsByTagName('body')[0]
+  // get the html of the body
+  const src = body.innerHTML
+  getWordDoc(src)
+}
+
+async function getWordDoc(src: string) {
+  await fetch('/api/pandoc', {
+    method: 'POST',
+    body: JSON.stringify({ html: src }),
+  })
+    .then(response => response.json())
+    .then(data => {
+      let base64Response = data.blob
+      let fetchResponse = fetch(base64Response)
+      fetchResponse
+        .then(res => res.blob())
+        .then(blob => {
+          // Now you have a Blob object, you can use it as you wish
+          console.log(blob)
+          // Create a new blob object
+          const newBlob = new Blob([blob], {
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          })
+
+          // Create a link element
+          const link = document.createElement('a')
+
+          // Create an object URL for the blob
+          const url = window.URL.createObjectURL(newBlob)
+
+          // Set the link's href to the object URL
+          link.href = url
+
+          // Set the download attribute of the link to the desired file name
+          link.download = 'Writing Assistant Document.docx'
+
+          // Append the link to the body
+          document.body.appendChild(link)
+
+          // Programmatically click the link to start the download
+          link.click()
+
+          // Once the download has started, remove the link from the body
+          document.body.removeChild(link)
+        })
+    })
+}
 
 // fetch selected text from the text editor every second
 if (process.client) {
@@ -1371,6 +1409,7 @@ function toggleChatHistoryExpanded() {
               @pause-read-aloud="pause"
               @toggle-read-only="toggleReadOnly"
               @clear-editor-content="clearEditorContent"
+              @download-word="downloadWord"
             />
           </div>
         </v-col>
