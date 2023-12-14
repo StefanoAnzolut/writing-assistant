@@ -897,12 +897,14 @@ async function focusReadAloudPauseButton() {
   }
 }
 
-function newAudioPlayer(): AudioPlayer {
+function newAudioPlayer(index: number): AudioPlayer {
   return {
     player: new speechsdk.SpeakerAudioDestination(),
     id: Date.now().toString(),
     muted: true,
-    alreadyPlayed: false,
+    alreadyPlayed:
+      chatHistory.messages[index] && chatHistory.messages[index].audioPlayer.alreadyPlayed === true ? true : false,
+    resynthesizeAudio: false,
   }
 }
 
@@ -924,7 +926,7 @@ async function synthesizeSpeech(text: string, index: number) {
   if (text === '') {
     return
   }
-  let audioPlayer = newAudioPlayer()
+  let audioPlayer = newAudioPlayer(index)
   if (index === directResponseIndex) {
     muteAllAudioplayers()
   } else if (index === readAloudPlayerIndex) {
@@ -991,7 +993,7 @@ function ifUserAnswerIsBeingReadAloud(index: number) {
 }
 
 function configureAudioPlayer(index: number): AudioPlayer {
-  let audioPlayer = newAudioPlayer()
+  let audioPlayer = newAudioPlayer(index)
   audioPlayer.player.onAudioEnd = audioPlayer => {
     window.console.log('Audio track ended')
     audioPlayer.pause()
@@ -1001,19 +1003,7 @@ function configureAudioPlayer(index: number): AudioPlayer {
     if (chatHistory.messages[index].message.role === 'user') {
       chatHistory.messages[index].audioPlayer.alreadyPlayed = true
     }
-    // if (chatHistory.messages[index].message.role === 'assistant') {
-    //   chatHistory.messages[index].audioPlayer.muted = true
-    //   chatHistory.messages[index].audioPlayer.alreadyPlayed = true
-    // } else {
-    //   chatHistory.messages[index - 1].audioPlayer.muted = true
-    //   chatHistory.messages[index - 1].audioPlayer.alreadyPlayed = true
-    // }
-    // play assistant response after reading the user prompt
-    // reverse order so we focus the same index as we insert at the start with unshift
-    // window.console.log('Index', index)
-    // window.console.log('Condition check 1', chatHistory.messages[index])
-    // window.console.log('Condition check 2', chatHistory.messages[index].message.role === 'assistant')
-    // window.console.log('Condition check 3', !chatHistory.messages[index].audioPlayer.alreadyPlayed)
+
     if (
       chatHistory.messages[0] &&
       chatHistory.messages[0].message.role === 'assistant' &&
@@ -1032,7 +1022,6 @@ function configureAudioPlayer(index: number): AudioPlayer {
   audioPlayer.player.onAudioStart = () => {
     window.console.log('Audio track started')
     window.console.log('Index', index)
-    // window.console.log(audioPlayer)
     prevAudioPlayer.value.player.pause()
     if (chatHistory.messages[index].message.role === 'user') {
       window.console.log('This should be a user index:', index)
@@ -1045,7 +1034,7 @@ function configureAudioPlayer(index: number): AudioPlayer {
       return
     }
     let currentTime = prevAudioPlayer.value.player.currentTime
-    if (currentTime !== -1 && !voiceSynthesisStartOver.value) {
+    if (currentTime !== -1 && !voiceSynthesisStartOver.value && !chatHistory.messages[index].message.html) {
       window.console.log('ARE WE GETTING IN HERE??', audioPlayer)
       // round to 2 decimal places
       audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100

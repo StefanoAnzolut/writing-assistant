@@ -113,15 +113,25 @@ async function collapse(index: number) {
       </v-btn>
     </v-container>
   </div>
-  <v-container v-if="!props.chatHistoryExpanded && props.messages.length > 2" class="d-flex flex-row justify-center">
-    <v-btn
+  <v-container v-if="props.messages.length > 2" class="d-flex flex-row justify-center">
+    <!-- <v-btn
       class="ma-1 no-uppercase"
       color="primary"
       @click="$emit('toggleChatHistory')"
       :aria-label="`Expand chat history`"
     >
       Expand chat history
-    </v-btn>
+    </v-btn> -->
+    <v-expansion-panels>
+      <v-expansion-panel
+        class="ma-1 no-uppercase"
+        color="primary"
+        @click="$emit('toggleChatHistory')"
+        :aria-label="props.chatHistoryExpanded !== true ? `Chat history` : `Chat history`"
+        :title="props.chatHistoryExpanded !== true ? `Chat history` : `Chat history`"
+      >
+      </v-expansion-panel>
+    </v-expansion-panels>
   </v-container>
 </template>
 <style scoped>

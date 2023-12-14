@@ -9,7 +9,7 @@ defineEmits(['toggleChatHistory'])
 </script>
 
 <template>
-  <v-container v-if="props.chatHistoryExpanded" class="d-flex flex-row justify-center read-aloud">
+  <!-- <v-container v-if="props.chatHistoryExpanded" class="d-flex flex-row justify-center read-aloud">
     <v-btn
       class="ma-1 no-uppercase"
       color="primary"
@@ -18,7 +18,7 @@ defineEmits(['toggleChatHistory'])
     >
       Collapse chat history</v-btn
     >
-  </v-container>
+  </v-container> -->
 </template>
 
 <style scoped>
