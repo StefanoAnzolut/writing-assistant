@@ -13,8 +13,19 @@ const props = defineProps({
 })
 defineEmits(['paste', 'pause', 'toggleChatHistory'])
 
-const chatMessages = computed(() => {
-  return props.chatHistoryExpanded ? props.messages : props.messages.slice(0, 2)
+const chatMessagesExtended = computed(() => {
+  let chatMessages = [] as { entry: ChatMessage; index: number }[]
+  props.messages.forEach((entry, index) => {
+    chatMessages.push({ entry: entry, index: index })
+  })
+
+  if (props.chatHistoryExpanded) {
+    return chatMessages
+  }
+  if (props.messages.length > 2 && props.messages[props.messages.length - 1].message.role === 'user') {
+    return chatMessages.slice(chatMessages.length - 1, chatMessages.length)
+  }
+  return chatMessages.slice(chatMessages.length - 2, chatMessages.length)
 })
 
 const HTML_EXTRACTION_PLACEHOLDER =
@@ -44,71 +55,80 @@ async function collapse(index: number) {
     expandButton.focus()
   }
 }
+function extractPrefix(str: string) {
+  return str.substring(0, str.indexOf('\n'))
+}
+
+function withoutPrefix(str: string) {
+  return str.substring(str.indexOf('\n'))
+}
 </script>
 <template>
   <div
-    v-for="(entry, i) in chatMessages"
-    :index="i"
+    v-for="item in chatMessagesExtended"
+    :index="item.index"
     key="m.id"
     class="chat-message ma-2 mx-4"
-    :class="props.messages[i].message.role === 'user' ? 'user-message' : 'assistant-message'"
+    :class="item.entry.message.role === 'user' ? 'user-message' : 'assistant-message'"
   >
     <div class="chat-inner">
-      <h2 class="aria-invisible" v-if="entry.message.role === 'user'">
-        {{ removeHtmlTags(entry.message.content.substring(0, 50)) }}
+      <h2 class="aria-invisible" v-if="item.entry.message.role === 'user'">
+        {{ removeHtmlTags(item.entry.message.content.substring(0, 50)) }}
       </h2>
-      <p class="h3-style" v-if="entry.message.role === 'user'">
-        {{ removeHtmlTags(entry.message.content.substring(0, entry.message.content.indexOf('\n'))) }}
+      <p class="h3-style" v-if="item.entry.message.role === 'user'">
+        {{ removeHtmlTags(extractPrefix(item.entry.message.content)) }}
         <span class="regular-font-weight">
-          {{ removeHtmlTags(entry.message.content.substring(entry.message.content.indexOf('\n'))) }}
+          {{ removeHtmlTags(withoutPrefix(item.entry.message.content)) }}
         </span>
       </p>
-      <h3 v-if="entry.message.role === 'assistant'">
-        {{ removeHtmlTags(entry.message.content.substring(0, entry.message.content.indexOf('\n'))) }}
-        <span class="regular-font-weight" v-if="!showHtml(entry)">
-          {{ removeHtmlTags(entry.message.content.substring(entry.message.content.indexOf('\n'))) }}
+      <h3 v-if="item.entry.message.role === 'assistant'">
+        {{ removeHtmlTags(extractPrefix(item.entry.message.content)) }}
+        <span class="regular-font-weight" v-if="!showHtml(item.entry)">
+          {{ removeHtmlTags(withoutPrefix(item.entry.message.content)) }}
         </span>
       </h3>
-      <div class="regular-font-weight" v-if="showHtml(entry)" v-html="entry.message.html" />
+      <div class="regular-font-weight" v-if="showHtml(item.entry)" v-html="item.entry.message.html" />
     </div>
     <v-container class="d-flex flex-row justify-end">
       <v-btn
-        :id="'playPauseButton' + i"
-        :icon="entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
+        :id="'playPauseButton' + item.index"
+        :icon="item.entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
         class="ma-1"
         color="success"
-        @click="$emit('pause', entry, i)"
+        @click="$emit('pause', item.entry, item.index)"
         :aria-label="
-          entry.audioPlayer.muted
-            ? `Play ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`
-            : `Pause ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`
+          item.entry.audioPlayer.muted
+            ? `Play ${extractPrefix(item.entry.message.content)}`
+            : `Pause ${extractPrefix(item.entry.message.content)}`
         "
         size="small"
       >
       </v-btn>
       <v-btn
-        v-if="entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) && entry.message.role === 'assistant'"
-        :id="showHtml(entry) ? 'collapseButton' + i : 'expandButton' + i"
-        :icon="showHtml(entry) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+        v-if="
+          item.entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) && item.entry.message.role === 'assistant'
+        "
+        :id="showHtml(item.entry) ? 'collapseButton' + item.index : 'expandButton' + item.index"
+        :icon="showHtml(item.entry) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
         class="ma-1"
         color="primary"
         :aria-label="
-          showHtml(entry)
-            ? `Collapse structure for ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`
-            : `Expand structure for ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))}`
+          showHtml(item.entry)
+            ? `Collapse structure for ${extractPrefix(item.entry.message.content)}`
+            : `Expand structure for ${extractPrefix(item.entry.message.content)}`
         "
-        @click="showHtml(entry) ? collapse(i) : expand(i)"
+        @click="showHtml(item.entry) ? collapse(item.index) : expand(item.index)"
         size="small"
       ></v-btn>
       <v-btn
-        :id="'addToChatEditor' + i"
+        :id="'addToChatEditor' + item.index"
         icon="mdi-content-paste"
         class="ma-1"
         color="primary"
-        @click="$emit('paste', i)"
-        :aria-label="`Add ${entry.message.content.substring(0, entry.message.content.indexOf('\n'))} to text editor`"
+        @click="$emit('paste', item.index)"
+        :aria-label="`Add ${extractPrefix(item.entry.message.content)} to text editor`"
         size="small"
-        v-if="entry.message.role === 'assistant'"
+        v-if="item.entry.message.role === 'assistant'"
       >
       </v-btn>
     </v-container>
