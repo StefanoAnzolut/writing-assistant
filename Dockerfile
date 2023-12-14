@@ -12,7 +12,6 @@ WORKDIR /app
 # Set production environment
 ENV NODE_ENV="production"
 
-
 # Throw-away build stage to reduce size of final image
 FROM base as build
 
@@ -20,8 +19,6 @@ FROM base as build
 RUN apt-get update -qq && \
     apt-get install -y build-essential pkg-config python-is-python3
 
-# Install pandoc
-RUN apt-get update && apt-get install -y pandoc
 
 # Install node modules
 COPY --link package-lock.json package.json ./
@@ -36,12 +33,14 @@ RUN npm run build
 # Remove development dependencies
 RUN npm prune --omit=dev
 
-
 # Final stage for app image
 FROM base
 
 # Copy built application
 COPY --from=build /app /app
+
+# Install pandoc for document generation in the last stage
+RUN apt-get update && apt-get install -y pandoc
 
 # Start the server by default, this can be overwritten at runtime
 EXPOSE 3000
