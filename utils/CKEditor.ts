@@ -27,24 +27,19 @@ export const actions = [
       '[MODIFICATION_REQUEST]: Simplify\n the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
   },
   {
-    name: 'findSynonyms',
-    label: 'Find synonyms',
-    prompt: 'SYNONYMS',
-  },
-  {
     name: 'reformulate',
     label: 'Reformulate',
     prompt:
       '[MODIFICATION_REQUEST]: Reformulate the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
   },
   {
-    name: 'addStructure',
-    label: 'Add structure',
-    prompt: '[MODIFICATION_REQUEST]: Add structure to the following content:\n',
+    name: 'findSynonyms',
+    label: 'Find synonyms',
+    prompt: 'SYNONYMS',
   },
   {
     name: 'askQuestion',
-    label: 'Ask your custom question',
+    label: 'Ask a question',
     prompt: 'STORE',
   },
 ]

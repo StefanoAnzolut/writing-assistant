@@ -12,6 +12,10 @@ import type { Session } from '~/models/Session'
 import { generateReadableTextFromHTML } from '~/utils/htmlReader'
 
 const thesaurus = await import('thesaurus')
+const { messages, input, handleSubmit, setMessages } = useChat({
+  headers: { 'Content-Type': 'application/json' },
+})
+
 onMounted(() => {
   console.log('OnMounted has been called')
   sessions.value = JSON.parse(localStorage.getItem('sessions') || '[]')
@@ -28,11 +32,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', keyDownHandler)
 })
-const { messages, input, handleSubmit, setMessages } = useChat({
-  headers: { 'Content-Type': 'application/json' },
-})
-
-// Maybe useCompletion might be interesting in the future
 
 /** LoadActiveSession */
 const sessionLoading = ref(false)
@@ -266,6 +265,7 @@ function submit(e: any): void {
     selectedText.value = ''
   }
   handleSubmit(e)
+  removeSelection()
   inputDisabled.value = true
   setTimeout(() => {
     inputDisabled.value = false
@@ -357,10 +357,13 @@ function getInnerHTMLForTextSnippetFromRange(range: any): string {
   if (startContainerParent.isEqualNode(endContainerParent)) {
     return decodeHtml(startContainerParent.outerHTML.replace('<br>', ''))
   }
-
-  const outerHtmlStart = getTextFromParentElement(range.startContainer.$.parentElement)
-  const outerHtmlEnd = getTextFromParentElement(range.endContainer.$.parentElement)
+  const outerHtmlStart = getTextFromParentElement(startContainerParent)
+  const outerHtmlEnd = getTextFromParentElement(endContainerParent)
   let documentInner = range.document.$.body.innerHTML
+  console.log(outerHtmlStart)
+  console.log(outerHtmlEnd)
+  console.log(documentInner.indexOf(outerHtmlStart))
+  console.log(documentInner.lastIndexOf(outerHtmlEnd) + outerHtmlEnd.length)
   let outerHtmlForRange = documentInner.substring(
     documentInner.indexOf(outerHtmlStart),
     documentInner.lastIndexOf(outerHtmlEnd) + outerHtmlEnd.length
@@ -380,6 +383,10 @@ function getTextFromParentElement(parentElement) {
 
 function preprocessUserMessage(message: Message): Message {
   message.content = message.content.replace('<text>', '').replace('</text>', '')
+  if (message.content.includes('Spell check the following content')) {
+    message.content = 'Spell checking your highlighted text.'
+  }
+  message.content = message.content.replace('Spell check the following content', '').replace('</text>', '')
   return message
 }
 
@@ -387,61 +394,56 @@ function preprocessUserMessage(message: Message): Message {
 function preprocessMessage(message: Message): Message {
   responseFinished.value = isFinished(message.content)
   message.content = message.content.replace('2:"[{\\"done\\":true}]"', '')
-  message.content = message.content.replace('[MODIFIED]:', '')
-  message.content = message.content.replace('[MODIFIED_CONTENT]:', '')
-  message.content = message.content.replace('[MODIFICATION_REQUEST]:', '')
-  message.content = message.content.replace('[ASSISTANT]:', '')
   message.content = message.content.trim()
-  if (message.content.includes('[MODIFIED_USER_INPUT]:') && message.content.includes('[CORRECTIONS]:')) {
-    message.content = handleSpellChecking(message.content)
-  }
-
+  // if (message.content.includes('[MODIFIED_USER_INPUT]:') && message.content.includes('[CORRECTIONS]:')) {
+  // message.content = handleSpellChecking(message.content)
+  // handleSpellChecking(message)
+  // }
   return message
 }
 
-function handleSpellChecking(content: string): string {
+function handleSpellChecking(assistantResponse: string): string {
+  let chatMessage = getLastEntry()
   let regex = /\[MODIFIED_USER_INPUT\]:(.*?)\[CORRECTIONS\]:/s
-  let match = content.match(regex)
+  let match = assistantResponse.match(regex)
+  console.log(match)
   if (match && match[1]) {
-    content = content.replace(match[1], '')
-    if (lastContextMenuAction.value === 'checkSpelling') {
-      handleModificationRequest(match[1].trim())
-      lastContextMenuAction.value = ''
-    }
+    assistantResponse = assistantResponse.replace(match[1], '')
+    // if (lastContextMenuAction.value === 'checkSpelling') {
+    chatMessage.message.html = match[1].trim()
+    // lastContextMenuAction.value = ''
+    // handleModificationRequest(match[1].trim())
+    // }
   }
-  content = content.replace('[MODIFIED_USER_INPUT]:', '')
-  content = content.replace('[CORRECTIONS]:', '')
-  if (content.includes('[USER_INPUT]')) {
-    content = content.replace(/\[USER_INPUT\](.*)$/s, '')
+  // content = content.replace('[MODIFIED_USER_INPUT]:', '')
+  assistantResponse = assistantResponse.replace(
+    '[CORRECTIONS]:',
+    'Here are the corrections, use the paste button to apply them.'
+  )
+  if (assistantResponse.includes('[USER_INPUT]')) {
+    assistantResponse = assistantResponse.replace(/\[USER_INPUT\](.*)$/s, '')
   }
-  return content.trim()
+  return assistantResponse.trim()
 }
 
 function isFinished(message: string) {
   return message.includes('2:"[{\\"done\\":true}]"')
 }
 
-function addPrefixToContent(latestMessage) {
-  const matchPrefix = latestMessage.content.match(/Answer (\d+)\n([\s\S]*)/)
+function addPrefixToAssistantResponse(chatMessage: ChatMessage): void {
+  const matchPrefix = chatMessage.message.content.match(/Answer (\d+)\n([\s\S]*)/)
   if (matchPrefix) {
     if (matchPrefix[2].includes('Answer')) {
-      return matchPrefix[2]
+      chatMessage.message.content = matchPrefix[2]
     } else {
-      return `Answer ${messageInteractionCounter.value}\n${matchPrefix[2]}`
+      chatMessage.message.content = `Answer ${messageInteractionCounter.value}\n${matchPrefix[2]}`
     }
+    return
   }
-  if (
-    chatHistory.messages.length > 0 &&
-    chatHistory.messages[getLastEntryIndex()].message.content.includes(latestMessage.content)
-  ) {
-    // Edge case: Due to the normal chronological order of messages from the library and
-    // the reversed order of the chatHistory.messages, it can lead to this edge case.
-    // As the watcher triggers for some reason, this avoids the inconsistency
-    return chatHistory.messages[getLastEntryIndex()].message.content
-  }
-  return latestMessage.role === 'user'
-    ? `Prompt ${messageInteractionCounter.value}\n${latestMessage.content}`
-    : `Answer ${messageInteractionCounter.value}\n${latestMessage.content}`
+  // Assistant responses without prefixes yet
+  chatHistory.messages[
+    getLastEntryIndex()
+  ].message.content = `Answer ${messageInteractionCounter.value}\n${chatMessage.message.content}`
 }
 
 function removeCallbackActionPrefix(content: string): string {
@@ -480,16 +482,18 @@ function removeCallbackActionPrefix(content: string): string {
 }
 
 function addToChatHistory(message: Message) {
-  message.content = removeCallbackActionPrefix(message.content)
   if (message.role === 'user') {
+    message.content = removeCallbackActionPrefix(message.content)
     messageInteractionCounter.value++
   }
-  // reverse order unshift
-  chatHistory.messages.push({
+  let chatMessage = {
     message: {
       id: Date.now().toString(),
       role: message.role,
-      content: addPrefixToContent(message),
+      content:
+        message.role === 'user'
+          ? `Prompt ${messageInteractionCounter.value}\n${message.content}`
+          : `Answer ${messageInteractionCounter.value}\n${message.content}`,
       new: true,
     },
     audioPlayer: {
@@ -498,7 +502,10 @@ function addToChatHistory(message: Message) {
       muted: true,
       alreadyPlayed: false,
     },
-  } as ChatMessage)
+  } as ChatMessage
+
+  // reverse order unshift
+  chatHistory.messages.push(chatMessage)
 }
 
 function isLastMessageUser() {
@@ -547,11 +554,11 @@ watch(messages, (_): void => {
   if (chatHistory.messages.length < messages.value.length) {
     addToChatHistory(message)
   }
-  let entry = getLastEntry()
-  if (entry.message.role === 'user') {
+  let chatMessage = getLastEntry()
+  if (chatMessage.message.role === 'user') {
     console.log('User Prompt')
-    entry.message.content = removeHtmlTags(entry.message.content)
-    synthesizeSpeech(entry.message.content, getLastEntryIndex())
+    chatMessage.message.content = removeHtmlTags(chatMessage.message.content)
+    synthesizeSpeech(chatMessage.message.content, getLastEntryIndex())
     setTimeout(() => {
       if (isLastMessageUser()) {
         let newMessage = {
@@ -577,14 +584,15 @@ watch(messages, (_): void => {
     return
   }
   console.log('Assistant Answer')
-  checkHTMLInResponse(addPrefixToContent(message))
-  if (entry.message.content.length > 250 && entry.message.new === true) {
-    entry.message.new = false
-    if (entry.message.content.includes('<ai-response>') || entry.message.content.includes('<body>')) {
+  checkHTMLInResponse(message.content)
+  addPrefixToAssistantResponse(chatMessage)
+  if (chatMessage.message.content.length > 250 && chatMessage.message.new === true) {
+    chatMessage.message.new = false
+    if (chatMessage.message.content.includes('<ai-response>') || chatMessage.message.content.includes('<body>')) {
       return
     }
-    addToVoiceResponse(entry.message.content)
-    synthesizeSpeech(entry.message.content, getLastAssistantResponseIndex())
+    addToVoiceResponse(chatMessage.message.content)
+    synthesizeSpeech(chatMessage.message.content, getLastAssistantResponseIndex())
     voiceSynthesisOnce.value = true
   }
 })
@@ -601,15 +609,15 @@ watch(responseFinished, (_): void => {
     clearInterval(intervalId.value)
     responseFinished.value = false
     voiceSynthesisOnce.value = false
-    let message = chatHistory.messages[getLastEntryIndex()].message
-    checkHTMLInResponse(message.content)
-    if (voiceResponse.value.includes(message.content)) {
+    const assistantResponse = chatHistory.messages[getLastEntryIndex()].message.content
+    checkHTMLInResponse(assistantResponse)
+    if (voiceResponse.value.includes(assistantResponse)) {
       return
     }
-    if (message.content.includes('<ai-response>')) {
+    if (assistantResponse.includes('<ai-response>')) {
       return
     }
-    addToVoiceResponse(chatHistory.messages[getLastEntryIndex()].message.content)
+    addToVoiceResponse(assistantResponse)
     // continue where we left off, do not start over
     voiceSynthesisStartOver.value = false
     synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
@@ -671,7 +679,7 @@ function replaceExpression(assistantResponse: string, expression: RegExp) {
   setResponse(textWithoutHtml)
 }
 
-function checkHTMLInResponse(assistantResponse: string) {
+function checkHTMLInResponse(assistantResponse: string): void {
   if (assistantResponse.includes(HTML_EXTRACTION_PLACEHOLDER)) {
     setResponse(assistantResponse)
   }
@@ -683,6 +691,9 @@ function checkHTMLInResponse(assistantResponse: string) {
     // Special case where html tags and ai-response tags are both missing
     replaceExpression(assistantResponse, /<body>([\s\S]*?)<\/body>/)
   } else {
+    if (lastContextMenuAction.value === 'checkSpelling') {
+      assistantResponse = handleSpellChecking(assistantResponse)
+    }
     setResponse(assistantResponse)
   }
 }
@@ -717,7 +728,7 @@ async function sttFromMic() {
     if (e.result.reason == speechsdk.ResultReason.RecognizedSpeech) {
       console.log(`RECOGNIZED: Text=${e.result.text}`)
       input.value = input.value.concat(e.result.text)
-      handleSubmit(new Event('submit'))
+      submit(new Event('submit'))
       speechRecognizer.value.stopContinuousRecognitionAsync()
     } else if (e.result.reason == speechsdk.ResultReason.NoMatch && e.result.text === '') {
       console.log('NOMATCH: Speech could not be recognized.')
@@ -819,7 +830,6 @@ function handleModificationRequest(content: string) {
   editorContent.value = editorContent.value
     .replace(/>\s+|\s+</g, m => m.trim())
     .replace(selectedTextProperties.value.context, decodeHtml(textReplacementInContext))
-  removeSelection()
 }
 
 function paste(index: number) {
@@ -828,9 +838,19 @@ function paste(index: number) {
     return
   }
   let replacementText = decodeHtml(matchPrefix[2])
-  const isHtml = isHtmlAlreadyExtracted(replacementText)
+  if (replacementText === 'No corrections were needed.') {
+    synthesizeSpeech('Cannot paste, as no corrections were needed.', directResponseIndex)
+    return
+  }
+  console.log(chatHistory.messages[index].message.html && /<[^>]*>/.test(chatHistory.messages[index].message.html))
+  const isHtml =
+    isHtmlAlreadyExtracted(replacementText) ||
+    (chatHistory.messages[index].message.html && /<[^>]*>/.test(chatHistory.messages[index].message.html))
   if (isHtml) {
+    console.log("it's html")
+    console.log(chatHistory.messages[index].message.html)
     replacementText = decodeHtml(chatHistory.messages[index].message.html)
+    console.log(replacementText)
   }
   if (IsInlineModification(lastContextMenuAction.value) && selectedText.value !== '') {
     handleModificationRequest(replacementText)
@@ -1068,6 +1088,7 @@ function configureReadAloudAudioPlayer(newlyAudioPlayer: AudioPlayer): AudioPlay
 }
 
 function setResponse(response: string) {
+  response = response.replace(/\[.*?\]:\s*/, '')
   chatHistory.messages[getLastEntryIndex()].message.content = response
 }
 
