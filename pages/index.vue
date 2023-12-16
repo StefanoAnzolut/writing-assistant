@@ -416,10 +416,16 @@ function handleSpellChecking(assistantResponse: string): string {
     // }
   }
   // content = content.replace('[MODIFIED_USER_INPUT]:', '')
-  assistantResponse = assistantResponse.replace(
-    '[CORRECTIONS]:',
-    'Here are the corrections, use the paste button to apply them.'
-  )
+  if (assistantResponse.includes('[CORRECTIONS]:')) {
+    if (assistantResponse.includes('No corrections were needed.')) {
+      assistantResponse = assistantResponse.replace('[CORRECTIONS]:', '')
+    } else {
+      assistantResponse = assistantResponse.replace(
+        '[CORRECTIONS]:',
+        'Here are the corrections, use the paste button to apply them.'
+      )
+    }
+  }
   if (assistantResponse.includes('[USER_INPUT]')) {
     assistantResponse = assistantResponse.replace(/\[USER_INPUT\](.*)$/s, '')
   }
@@ -838,7 +844,7 @@ function paste(index: number) {
     return
   }
   let replacementText = decodeHtml(matchPrefix[2])
-  if (replacementText === 'No corrections were needed.') {
+  if (replacementText.includes('No corrections were needed.')) {
     synthesizeSpeech('Cannot paste, as no corrections were needed.', directResponseIndex)
     return
   }
