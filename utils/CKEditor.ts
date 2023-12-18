@@ -7,30 +7,41 @@ export const actions = [
   {
     name: 'checkSpelling',
     label: 'Spell check',
-    prompt: `[MODIFICATION_REQUEST]: Spell check the following content, only re-use given html tags and provide a numbered list of all corrections made.
+    prompt: `[MODIFICATION_REQUEST]: Spell check the following content, only re-use given html tags and provide a numbered list of all corrections that were made.
     If no correction are needed, reply with "No corrections were needed". For every correction say "Corrected {missspelled word} to {correctly spelled word}".
     Answer formatting should be as follows for this request only:
     [MODIFIED_USER_INPUT]: {Your answer here}
-    [CORRECTIONS]: {List of corrections here}
+    [MODIFICATIONS]: {List of corrections here, each correction on a new line}
     [USER_INPUT]: `,
   },
   {
     name: 'summarize',
     label: 'Summarize',
-    prompt:
-      '[MODIFICATION_REQUEST]: Summarize\n the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
+    prompt: `[MODIFICATION_REQUEST]: Summarize the following content, only re-use given html tags and provide a numbered list of all things that were made shorter.
+    If the text cannot be made simpler, reply with "Cannot summarize further".
+    Answer formatting should be as follows for this request only:
+    [MODIFIED_USER_INPUT]: {Your answer here}
+    [MODIFICATIONS]: {List of modifications here, each modification on a new line}
+    [USER_INPUT]: `,
   },
   {
     name: 'simplify',
     label: 'Simplify',
-    prompt:
-      '[MODIFICATION_REQUEST]: Simplify\n the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
+    prompt: `[MODIFICATION_REQUEST]: Simplify the following content, only re-use given html tags and provide a numbered list of all things that were made simpler.
+    If the text cannot be made simpler, reply with "Cannot simplify text further".
+    Answer formatting should be as follows for this request only:
+    [MODIFIED_USER_INPUT]: {Your answer here}
+    [MODIFICATIONS]: {List of modifications here, each modification on a new line}
+    [USER_INPUT]: `,
   },
   {
     name: 'reformulate',
     label: 'Reformulate',
-    prompt:
-      '[MODIFICATION_REQUEST]: Reformulate the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
+    prompt: `[MODIFICATION_REQUEST]: Reformulate the following content, only re-use given html tags and provide a numbered list of all things that were reformulated.
+    Answer formatting should be as follows for this request only:
+    [MODIFIED_USER_INPUT]: {Your answer here}
+    [MODIFICATIONS]: {List of modifications here, each modification on a new line}
+    [USER_INPUT]: `,
   },
   {
     name: 'findSynonyms',

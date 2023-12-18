@@ -279,10 +279,12 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     // no selection
     return
   }
+  const innerHtml = getHTMLFromRange(range)
+  console.log(innerHtml)
   selectedTextProperties.value = {
     startOffset: range.startOffset,
     endOffset: range.endOffset,
-    context: getInnerHTMLForTextSnippetFromRange(range),
+    context: innerHtml,
   }
   actions.forEach(action => {
     if (action.prompt === prompt) {
@@ -349,21 +351,34 @@ function removeSelection() {
   selectedText.value = ''
 }
 
-function getInnerHTMLForTextSnippetFromRange(range: any): string {
-  const startContainerParent = range.startContainer.$.parentElement
-  const endContainerParent = range.endContainer.$.parentElement
+function getHTMLFromRange(range: any): string {
+  const acceptedElements = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL']
+  let startContainer = range.startContainer.$
+  let endContainer = range.endContainer.$
   console.log(range)
-  console.log(startContainerParent.isEqualNode(endContainerParent))
-  if (startContainerParent.isEqualNode(endContainerParent)) {
-    return decodeHtml(startContainerParent.outerHTML.replace('<br>', ''))
+  console.log(startContainer.isEqualNode(endContainer))
+  if (startContainer.isEqualNode(endContainer)) {
+    // Check whether the startContainer is a text node or an element node
+    if (startContainer.nodeType === 3) {
+      // text node => so we fallback to parentElement
+      return decodeHtml(startContainer.parentElement.outerHTML.replace('<br>', ''))
+    }
+    console.log('startContainer:', startContainer)
+    return getOuterHtml(startContainer, acceptedElements)
   }
-  const outerHtmlStart = getTextFromParentElement(startContainerParent)
-  const outerHtmlEnd = getTextFromParentElement(endContainerParent)
+  if (startContainer.nodeType === 3) {
+    // text node => so we fallback to parentElement
+    startContainer = startContainer.parentElement
+  }
+  if (endContainer.nodeType === 3) {
+    // text node => so we fallback to parentElement
+    endContainer = endContainer.parentElement
+  }
+  console.log('Entering with startContainerParent:', startContainer)
+  console.log('Entering with endContainerParent:', endContainer)
+  const outerHtmlStart = getOuterHtml(startContainer, acceptedElements)
+  const outerHtmlEnd = getOuterHtml(endContainer, acceptedElements)
   let documentInner = range.document.$.body.innerHTML
-  console.log(outerHtmlStart)
-  console.log(outerHtmlEnd)
-  console.log(documentInner.indexOf(outerHtmlStart))
-  console.log(documentInner.lastIndexOf(outerHtmlEnd) + outerHtmlEnd.length)
   let outerHtmlForRange = documentInner.substring(
     documentInner.indexOf(outerHtmlStart),
     documentInner.lastIndexOf(outerHtmlEnd) + outerHtmlEnd.length
@@ -372,13 +387,12 @@ function getInnerHTMLForTextSnippetFromRange(range: any): string {
   return decodeHtml(outerHtmlForRange)
 }
 
-function getTextFromParentElement(parentElement) {
-  const textSectionParent = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL']
-  if (textSectionParent.some(p => parentElement.tagName.includes(p))) {
+function getOuterHtml(element: Element, acceptedElements: string[]): string {
+  if (acceptedElements.some(p => element.tagName.includes(p))) {
     // replace <br> which can appear out of nowhere for the text editor
-    return decodeHtml(parentElement.outerHTML.replace('<br>', ''))
+    return decodeHtml(element.outerHTML.replace('<br>', ''))
   }
-  return getTextFromParentElement(parentElement.parentElement)
+  return getOuterHtml(element.parentElement, acceptedElements)
 }
 
 function preprocessUserMessage(message: Message): Message {
@@ -387,6 +401,10 @@ function preprocessUserMessage(message: Message): Message {
     message.content = 'Spell checking your highlighted text.'
   }
   message.content = message.content.replace('Spell check the following content', '').replace('</text>', '')
+  if (message.content.includes('Summarize the following content')) {
+    message.content = 'Summarizing your highlighted text.'
+  }
+  message.content = message.content.replace('Summarize the following content', '').replace('</text>', '')
   return message
 }
 
@@ -402,9 +420,9 @@ function preprocessMessage(message: Message): Message {
   return message
 }
 
-function handleSpellChecking(assistantResponse: string): string {
+function handleContextMenuAction(assistantResponse: string): string {
   let chatMessage = getLastEntry()
-  let regex = /\[MODIFIED_USER_INPUT\]:(.*?)\[CORRECTIONS\]:/s
+  let regex = /\[MODIFIED_USER_INPUT\]:(.*?)\[MODIFICATIONS\]:/s
   let match = assistantResponse.match(regex)
   console.log(match)
   if (match && match[1]) {
@@ -416,12 +434,31 @@ function handleSpellChecking(assistantResponse: string): string {
     // }
   }
   // content = content.replace('[MODIFIED_USER_INPUT]:', '')
-  if (assistantResponse.includes('[CORRECTIONS]:')) {
-    if (assistantResponse.includes('No corrections were needed.')) {
-      assistantResponse = assistantResponse.replace('[CORRECTIONS]:', '')
+  if (
+    assistantResponse.includes('[MODIFICATIONS]:') &&
+    (lastContextMenuAction.value === 'summarize' ||
+      lastContextMenuAction.value === 'simplify' ||
+      lastContextMenuAction.value === 'reformulate')
+  ) {
+    if (
+      assistantResponse.includes('Cannot summarize further') ||
+      assistantResponse.includes('Cannot simplify text further')
+    ) {
+      assistantResponse = assistantResponse.replace('[MODIFICATIONS]:', '')
     } else {
       assistantResponse = assistantResponse.replace(
-        '[CORRECTIONS]:',
+        '[MODIFICATIONS]:',
+        'Here are the modifications, use the paste button to apply them.'
+      )
+    }
+  }
+
+  if (assistantResponse.includes('[MODIFICATIONS]:') && lastContextMenuAction.value === 'checkSpelling') {
+    if (assistantResponse.includes('No corrections were needed.')) {
+      assistantResponse = assistantResponse.replace('[MODIFICATIONS]:', '')
+    } else {
+      assistantResponse = assistantResponse.replace(
+        '[MODIFICATIONS]:',
         'Here are the corrections, use the paste button to apply them.'
       )
     }
@@ -453,29 +490,49 @@ function addPrefixToAssistantResponse(chatMessage: ChatMessage): void {
 }
 
 function removeCallbackActionPrefix(content: string): string {
-  if (
-    content.includes('the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n')
-  ) {
+  console.log('removeCallbackActionPrefix')
+  console.log(content)
+  console.log(content.includes(`provide a numbered list of all things that were made shorter.`))
+  console.log(content.includes(`provide a numbered list of all things that were made simpler.`))
+  console.log(content.includes(`provide a numbered list of all things that were reformulated.`))
+  console.log(content.includes(`provide a numbered list of all corrections made.`))
+
+  if (content.includes(`provide a numbered list of all things that were made shorter.`)) {
     content = content.replace(
-      'the following content and re-use valid html tags that were given as input.:\n [USER_INPUT]:\n',
+      `the following content, only re-use given html tags and provide a numbered list of all things that were made shorter.
+    If the text cannot be summarized better, reply with "Cannot summarize further".
+    Answer formatting should be as follows for this request only:
+    [MODIFIED_USER_INPUT]: {Your answer here}
+    [MODIFICATIONS]: {List of modifications here, each modification on a new line}
+    [USER_INPUT]: `,
       ''
     )
-  } else if (
-    content.includes(
-      `only re-use given html tags and provide a numbered list of all corrections made.
-    If no correction are needed, reply with "No corrections were needed". For every correction say "Corrected {missspelled word} to {correctly spelled word}".
+  } else if (content.includes(`provide a numbered list of all things that were made simpler.`)) {
+    content = content.replace(
+      `only re-use given html tags and provide a numbered list of all things that were made simpler.
+    If the text cannot be made simpler, reply with "Cannot simplify text further".
     Answer formatting should be as follows for this request only:
     [MODIFIED_USER_INPUT]: {Your answer here}
-    [CORRECTIONS]: {List of corrections here}
-    [USER_INPUT]: `
+    [MODIFICATIONS]: {List of modifications here, each modification on a new line}
+    [USER_INPUT]: `,
+      ''
     )
-  ) {
+  } else if (content.includes(`provide a numbered list of all things that were reformulated.`)) {
+    content = content.replace(
+      `the following content, only re-use given html tags and provide a numbered list of all things that were reformulated.
+    Answer formatting should be as follows for this request only:
+    [MODIFIED_USER_INPUT]: {Your answer here}
+    [MODIFICATIONS]: {List of modifications here, each modification on a new line}
+    [USER_INPUT]: `,
+      ''
+    )
+  } else if (content.includes(`provide a numbered list of all corrections made.`)) {
     content = content.replace(
       `only re-use given html tags and provide a numbered list of all corrections made.
     If no correction are needed, reply with "No corrections were needed". For every correction say "Corrected {missspelled word} to {correctly spelled word}".
     Answer formatting should be as follows for this request only:
     [MODIFIED_USER_INPUT]: {Your answer here}
-    [CORRECTIONS]: {List of corrections here}
+    [CORRECTIONS]: {List of corrections here, each correction on a new line}
     [USER_INPUT]: `,
       ''
     )
@@ -484,6 +541,7 @@ function removeCallbackActionPrefix(content: string): string {
   if (content.includes('[MODIFICATION_REQUEST]: ')) {
     content = content.replace('[MODIFICATION_REQUEST]: ', '')
   }
+  console.log('removed prefixes?', content)
   return content
 }
 
@@ -697,8 +755,8 @@ function checkHTMLInResponse(assistantResponse: string): void {
     // Special case where html tags and ai-response tags are both missing
     replaceExpression(assistantResponse, /<body>([\s\S]*?)<\/body>/)
   } else {
-    if (lastContextMenuAction.value === 'checkSpelling') {
-      assistantResponse = handleSpellChecking(assistantResponse)
+    if (IsInlineModification(lastContextMenuAction.value)) {
+      assistantResponse = handleContextMenuAction(assistantResponse)
     }
     setResponse(assistantResponse)
   }
@@ -760,15 +818,7 @@ function addToVoiceResponse(assistantResponse: string) {
 }
 
 function IsInlineModification(action: string) {
-  const modifcationActions = [
-    'summarize',
-    'checkSpelling',
-    'simplify',
-    'reformulate',
-    'concise',
-    'adaptToScientificStyle',
-    'addStructure',
-  ]
+  const modifcationActions = ['summarize', 'checkSpelling', 'simplify', 'reformulate', 'concise']
   return modifcationActions.includes(action)
 }
 
@@ -811,18 +861,18 @@ function decodeHtml(str: string): string {
 function handleModificationRequest(content: string) {
   editorContent.value = decodeHtml(editorContent.value)
   selectedText.value = decodeHtml(selectedText.value)
-  let textReplacementInContext = ''
-  if (lastContextMenuAction.value === 'checkSpelling') {
-    textReplacementInContext = selectedTextProperties.value.context.replace(
-      selectedTextProperties.value.context,
-      content.trim()
-    )
-  } else {
-    console.log('selectedTextProperties.value.context:', selectedTextProperties.value.context)
-    console.log('Selected text:', selectedText.value)
-    console.log('inlcudes:', selectedTextProperties.value.context.includes(selectedText.value))
-    textReplacementInContext = selectedTextProperties.value.context.replace(selectedText.value, content.trim())
-  }
+  // let textReplacementInContext = ''
+  // if (lastContextMenuAction.value !== '') {
+  const textReplacementInContext = selectedTextProperties.value.context.replace(
+    selectedTextProperties.value.context,
+    content.trim()
+  )
+  // } else {
+  //   console.log('selectedTextProperties.value.context:', selectedTextProperties.value.context)
+  //   console.log('Selected text:', selectedText.value)
+  //   console.log('inlcudes:', selectedTextProperties.value.context.includes(selectedText.value))
+  //   textReplacementInContext = selectedTextProperties.value.context.replace(selectedText.value, content.trim())
+  // }
   console.log('textReplacementInContext:', textReplacementInContext)
   console.log('selectedTextProperties.value.context:', selectedTextProperties.value.context)
   console.log(
@@ -848,10 +898,9 @@ function paste(index: number) {
     synthesizeSpeech('Cannot paste, as no corrections were needed.', directResponseIndex)
     return
   }
-  console.log(chatHistory.messages[index].message.html && /<[^>]*>/.test(chatHistory.messages[index].message.html))
-  const isHtml =
-    isHtmlAlreadyExtracted(replacementText) ||
-    (chatHistory.messages[index].message.html && /<[^>]*>/.test(chatHistory.messages[index].message.html))
+  console.log(chatHistory.messages[index].message.html)
+  const isHtml = isHtmlAlreadyExtracted(replacementText) || chatHistory.messages[index].message.html
+  //  && /<[^>]*>/.test(chatHistory.messages[index].message.html)
   if (isHtml) {
     console.log("it's html")
     console.log(chatHistory.messages[index].message.html)
