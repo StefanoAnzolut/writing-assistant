@@ -14,6 +14,7 @@ const emit = defineEmits(['update:modelValue', 'sttFromMic'])
 
 <template>
   <v-btn
+    id="mic-input-btn"
     icon="mdi-microphone"
     color="primary"
     class="no-uppercase mt-3 ml-1"

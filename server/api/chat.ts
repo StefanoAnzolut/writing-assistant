@@ -45,7 +45,7 @@ function numTokensFromString(message: string) {
   return tokens.length
 }
 
-function checkContextLengthAndUpdateSlidingWindow(messages) {
+function checkContextLengthAndUpdateSlidingWindow(messages: Message[]) {
   const reversedMessages = [...messages].reverse()
   let tokenCount = 0
   let finalMessages = []
@@ -61,6 +61,7 @@ function checkContextLengthAndUpdateSlidingWindow(messages) {
     finalMessages.push(message)
     tokenCount += messageTokenCount
   }
+  console.log('Token count: ', tokenCount)
 
   // Reverse the final messages so they're in the original order
   return finalMessages.reverse()
@@ -130,11 +131,12 @@ async function checkStructureRequest(message: Message) {
   }
 }
 
-async function improvePrompt(message: Message) {
+async function improvePrompt(messages: Message[]) {
   // 1.Paragraph How to write a scientific article Hoogenboom BJ, Manske RC.
   // 2.Paragraph From Nature readability
   // Rewritten by GPT-4
   // 3. GPT-4 Example as reference point
+  const message = messages[messages.length - 1]
   let systemPrompt = `
   You are now tasked to improve the current prompt to make it more accurate and detailed. Only update the current prompt, avoid modifiyng the intent of the request, if uncertain rather keep the same prompt, than changing its intent. Next, consider the context for additional help but also consider different information.
   <Relevant context for the prompt>
@@ -197,14 +199,15 @@ async function improvePrompt(message: Message) {
     </Relevant context for the prompt>
     Below is the user request that you need to improve:
     `
-  let messages = [
-    {
-      content: systemPrompt.concat(`Text"""\n${message.content}\n"""`),
-      role: 'user',
-    },
-  ]
+  let messagesPayload: Message[] = [...messages]
+  messagesPayload.push({
+    id: Date.now().toString(),
+    content: systemPrompt.concat(`Text"""\n${message.content}\n"""`),
+    role: 'user',
+  })
+  messagesPayload = checkContextLengthAndUpdateSlidingWindow(messagesPayload)
   let streaming = false
-  const response = await askOpenAI(messages, streaming)
+  const response = await askOpenAI(messagesPayload, streaming)
   let assistantResponse = response['choices'][0]['message']['content']
   console.log('GPT suggested prompt: ', assistantResponse)
   return assistantResponse
@@ -229,7 +232,7 @@ export default defineLazyEventHandler(async () => {
 
     if (isStructureRequest === true) {
       // data.append({ structureRequest: true })
-      const improvedPrompt = await improvePrompt(lastMessage)
+      const improvedPrompt = await improvePrompt(finalMessages)
       lastMessage.content = improvedPrompt.concat(
         `
         Your answer formatting requirements:
@@ -242,6 +245,7 @@ export default defineLazyEventHandler(async () => {
         Thus, I deeply rely on the correct structure.`
       )
       finalMessages[finalMessages.length - 1].content = lastMessage.content
+      finalMessages = checkContextLengthAndUpdateSlidingWindow(messages)
       response = await askOpenAI(finalMessages, streaming, 'gpt35')
     } else {
       response = await askOpenAI(finalMessages, streaming, 'gpt4')

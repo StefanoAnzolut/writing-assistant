@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AudioPlayer } from '~/models/AudioPlayer'
-
+import { useDisplay } from 'vuetify'
 const props = defineProps({
   showReadAloud: {
     type: Boolean as PropType<boolean>,
@@ -20,11 +20,11 @@ const props = defineProps({
   },
 })
 defineEmits(['pauseReadAloud', 'toggleReadOnly', 'clearEditorContent', 'downloadWord'])
+const { mdAndUp } = useDisplay()
 </script>
 
 <template>
   <v-container class="d-flex flex-row justify-end read-aloud">
-    <v-btn class="ma-1 no-uppercase" color="primary" @click="$emit('downloadWord')">Download as word</v-btn>
     <v-btn
       v-if="props.showReadAloud"
       id="playPauseButtonReadAloud"
@@ -36,16 +36,39 @@ defineEmits(['pauseReadAloud', 'toggleReadOnly', 'clearEditorContent', 'download
       size="small"
     ></v-btn>
     <v-btn
+      :class="mdAndUp === true ? 'v-btn--size-default' : ''"
+      class="ma-1 no-uppercase"
+      color="primary"
+      @click="$emit('downloadWord')"
+      :size="mdAndUp === true ? 'null' : 'small'"
+      >Download document</v-btn
+    >
+    <v-btn
       v-if="props.readOnly === true"
+      :class="mdAndUp === true ? 'v-btn--size-default' : ''"
       class="ma-1 no-uppercase"
       color="primary"
       @click="$emit('toggleReadOnly', readOnly)"
+      :size="mdAndUp === true ? 'null' : 'small'"
       >Deactivate read only</v-btn
     >
-    <v-btn v-else class="ma-1 no-uppercase" color="primary" @click="$emit('toggleReadOnly', readOnly)"
+    <v-btn
+      v-else
+      :class="mdAndUp === true ? 'v-btn--size-default' : ''"
+      class="ma-1 no-uppercase"
+      :size="mdAndUp === true ? 'null' : 'small'"
+      color="primary"
+      @click="$emit('toggleReadOnly', readOnly)"
       >Activate read only</v-btn
     >
-    <v-btn class="ma-1 no-uppercase" color="primary" @click="$emit('clearEditorContent')">Clear text editor</v-btn>
+    <v-btn
+      :class="mdAndUp === true ? 'v-btn--size-default' : ''"
+      class="ma-1 no-uppercase"
+      color="primary"
+      :size="mdAndUp === true ? 'null' : 'small'"
+      @click="$emit('clearEditorContent')"
+      >Clear text editor</v-btn
+    >
   </v-container>
 </template>
 
