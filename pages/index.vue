@@ -56,8 +56,8 @@ const selectedText = ref('')
 const selectedTextIntermediate = ref('')
 const selectedTextProperties = ref({ startOffset: 0, endOffset: 0, context: '' } as any)
 const selectedTextPropertiesSynonyms = ref({ startOffset: 0, endOffset: 0, context: '' } as any)
-
 const lastContextMenuAction = ref('')
+// const lastPastedContent = ref('')
 
 /** The reference to see whether we have reached the end of a streaming response from ChatGPT */
 const responseFinished = ref(false)
@@ -124,6 +124,9 @@ function removeExtraComponents(sleepTimer: number = 350) {
 
     let textAreaForm = document.getElementsByTagName('TEXTAREA')
     textAreaForm[0].remove()
+
+    const editorIframe = document.getElementsByTagName('iframe')[0]
+    editorIframe.contentWindow.document.addEventListener('keydown', keyDownHandler)
   }, sleepTimer)
 }
 
@@ -217,10 +220,12 @@ function loadActiveSession() {
   }
 
   if (chatHistory.messages.length > 0) {
-    messages.value = chatHistory.messages.map(message => {
-      delete message.message.new
-      return message.message
-    })
+    setMessages(
+      chatHistory.messages.map(message => {
+        delete message.message.new
+        return message.message
+      })
+    )
   }
   muteAllAudioplayers()
 }
@@ -247,13 +252,69 @@ function loadActiveSession() {
 // doc.scrollTop = (76 * window.innerHeight) / 100
 // }
 
+function toggleToolbar(): void {
+  let toolbar = window.document.getElementsByClassName('cke_top')
+  if (toolbar[0].getAttribute('style') === 'display: none') {
+    toolbar[0].setAttribute('style', 'display: block')
+  } else {
+    toolbar[0].setAttribute('style', 'display: none')
+  }
+}
+
 function keyDownHandler(event: KeyboardEvent) {
+  // window.console.log(event)
   if (event.code === 'Escape') {
     drawer.value = false
     // set editor to read only mode
     // toggleReadOnly(readOnly.value)
   }
+  if (event.key === 'F8') {
+    toggleToolbar()
+  }
+  // only the first key press is registered in the iframe for a shortcut combination
+  // if (event.key === 'F9') {
+  //   let element = document.getElementById('cke_10')
+  //   element.focus()
+  // }
 }
+
+// function getLastTagFromSelection() {}
+
+// function findPastedText() {
+//   // Use cases to consider:
+//   // 1. Paste structured answer
+//   // 2. Paste answer with valid lastContextMenuAction (Modification)
+//   // 3. Paste regular answer
+//   let text = ''
+//   let element = ''
+//   const iframe = document.getElementsByTagName('iframe')[0]
+//   for (const a of iframe.contentDocument.querySelectorAll('a')) {
+//     if (a.textContent.includes('your search term')) {
+//       console.log(a.textContent)
+//     }
+//   }
+// }
+
+// function focusOnPastedContent(pastedContent: string) {
+//   console.log('focusOnPastedContent')
+//   console.log(pastedContent)
+// }
+
+// function focusOnEndOfEditor() {
+//   console.log('focusOnEndOfEditor')
+//   const iframe = document.getElementsByTagName('iframe')[0]
+//   const editor = iframe.contentDocument.getElementsByTagName('body')[0]
+//   editor.focus()
+//   console.log(editor)
+//   const lastChild = editor.lastChild
+//   console.log(lastChild)
+//   lastChild.setSelectionRange(editorContent.value.length, editorContent.value.length)
+
+//   // lastChild.setSelectionRange(caret, caret)
+//   // console.log(lastChild)
+//   // lastChild.scrollIntoView()
+//   lastChild.focus()
+// }
 
 /** Text completion submission wrapper */
 function submit(e: any): void {
@@ -340,11 +401,12 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     console.log('prompt:', prompt)
     input.value = input.value.concat(prompt + selectedTextFromEditor)
   }
-  try {
-    handleSubmit(event)
-  } catch (e) {
-    console.log(e)
-  }
+  console.log('submitting')
+  handleSubmit(event)
+  console.log('should be submitted')
+  setTimeout(() => {
+    console.log(messages.value)
+  }, 1000)
 }
 
 function removeSelection() {
@@ -644,7 +706,7 @@ watch(messages, (_): void => {
         // }, 5000)
       }
       // focusPauseButton(getLastAssistantResponseIndex())
-    }, 5000)
+    }, 4000)
     return
   }
   console.log('Assistant Answer')
@@ -831,6 +893,7 @@ function insertParagraphWise(paragraphs: string[]) {
     }
     editorContent.value = editorContent.value.concat(`<p>${paragraph}</p>`)
   }
+  // focusOnEndOfEditor()
 }
 
 function decodeHtmlCharCodes(str: string): string {
@@ -861,31 +924,23 @@ function decodeHtml(str: string): string {
 function handleModificationRequest(content: string) {
   editorContent.value = decodeHtml(editorContent.value)
   selectedText.value = decodeHtml(selectedText.value)
-  // let textReplacementInContext = ''
-  // if (lastContextMenuAction.value !== '') {
-  const textReplacementInContext = selectedTextProperties.value.context.replace(
-    selectedTextProperties.value.context,
-    content.trim()
+  const textReplacementInContext = decodeHtml(
+    selectedTextProperties.value.context.replace(selectedTextProperties.value.context, content.trim())
   )
-  // } else {
-  //   console.log('selectedTextProperties.value.context:', selectedTextProperties.value.context)
-  //   console.log('Selected text:', selectedText.value)
-  //   console.log('inlcudes:', selectedTextProperties.value.context.includes(selectedText.value))
-  //   textReplacementInContext = selectedTextProperties.value.context.replace(selectedText.value, content.trim())
-  // }
-  console.log('textReplacementInContext:', textReplacementInContext)
-  console.log('selectedTextProperties.value.context:', selectedTextProperties.value.context)
-  console.log(
-    'editorContent.value:',
-    editorContent.value.replace(/>\s+|\s+</g, m => m.trim())
-  )
-  console.log(
-    'includes:',
-    editorContent.value.replace(/>\s+|\s+</g, m => m.trim()).includes(selectedTextProperties.value.context)
-  )
+  // console.log('textReplacementInContext:', textReplacementInContext)
+  // console.log('selectedTextProperties.value.context:', selectedTextProperties.value.context)
+  // console.log(
+  //   'editorContent.value:',
+  //   editorContent.value.replace(/>\s+|\s+</g, m => m.trim())
+  // )
+  // console.log(
+  //   'includes:',
+  //   editorContent.value.replace(/>\s+|\s+</g, m => m.trim()).includes(selectedTextProperties.value.context)
+  // )
   editorContent.value = editorContent.value
     .replace(/>\s+|\s+</g, m => m.trim())
-    .replace(selectedTextProperties.value.context, decodeHtml(textReplacementInContext))
+    .replace(selectedTextProperties.value.context, textReplacementInContext)
+  // focusOnPastedContent(textReplacementInContext)
 }
 
 function paste(index: number) {
@@ -902,8 +957,6 @@ function paste(index: number) {
   const isHtml = isHtmlAlreadyExtracted(replacementText) || chatHistory.messages[index].message.html
   //  && /<[^>]*>/.test(chatHistory.messages[index].message.html)
   if (isHtml) {
-    console.log("it's html")
-    console.log(chatHistory.messages[index].message.html)
     replacementText = decodeHtml(chatHistory.messages[index].message.html)
     console.log(replacementText)
   }
@@ -918,6 +971,7 @@ function paste(index: number) {
     } else {
       synthesizeSpeech('Pasting content to end of text editor', directResponseIndex)
       editorContent.value += replacementText
+      // focusOnEndOfEditor()
       // scrollToBottomTextEditor()
     }
     return
@@ -926,6 +980,7 @@ function paste(index: number) {
   if (isHtml) {
     synthesizeSpeech('Pasted structured to the text editor.', directResponseIndex)
     editorContent.value += replacementText
+    // focusOnEndOfEditor()
     return
   }
   if (editorContent.value === '') {
@@ -937,6 +992,7 @@ function paste(index: number) {
   if (replacementText.toLowerCase().includes('html')) {
     // Special case where html is not identified correctly
     editorContent.value += replacementText
+    // focusOnEndOfEditor()
     // scrollToBottomTextEditor()
     return
   }
