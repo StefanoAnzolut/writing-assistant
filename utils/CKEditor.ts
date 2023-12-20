@@ -262,3 +262,59 @@ export function registerActionsWithSynonyms(
     return contextMenuListener
   })
 }
+
+export function removeCallbackActionPrefix(content: string): string {
+  console.log('removeCallbackActionPrefix')
+  console.log(content)
+  console.log(content.includes(`provide a numbered list of all things that were made shorter.`))
+  console.log(content.includes(`provide a numbered list of all things that were made simpler.`))
+  console.log(content.includes(`provide a numbered list of all things that were reformulated.`))
+  console.log(content.includes(`provide a numbered list of all corrections made.`))
+
+  if (content.includes(`provide a numbered list of all things that were made shorter.`)) {
+    content = content.replace(
+      `the following content, only re-use given html tags and provide a numbered list of all things that were made shorter.
+    If the text cannot be summarized better, reply with "Cannot summarize further".
+    Answer formatting should be as follows for this request only:
+    [MODIFIED_USER_INPUT]: {Your answer here}
+    [MODIFICATIONS]: {List of modifications here, each modification on a new line}
+    [USER_INPUT]: `,
+      ''
+    )
+  } else if (content.includes(`provide a numbered list of all things that were made simpler.`)) {
+    content = content.replace(
+      `only re-use given html tags and provide a numbered list of all things that were made simpler.
+    If the text cannot be made simpler, reply with "Cannot simplify text further".
+    Answer formatting should be as follows for this request only:
+    [MODIFIED_USER_INPUT]: {Your answer here}
+    [MODIFICATIONS]: {List of modifications here, each modification on a new line}
+    [USER_INPUT]: `,
+      ''
+    )
+  } else if (content.includes(`provide a numbered list of all things that were reformulated.`)) {
+    content = content.replace(
+      `the following content, only re-use given html tags and provide a numbered list of all things that were reformulated.
+    Answer formatting should be as follows for this request only:
+    [MODIFIED_USER_INPUT]: {Your answer here}
+    [MODIFICATIONS]: {List of modifications here, each modification on a new line}
+    [USER_INPUT]: `,
+      ''
+    )
+  } else if (content.includes(`provide a numbered list of all corrections made.`)) {
+    content = content.replace(
+      `only re-use given html tags and provide a numbered list of all corrections made.
+    If no correction are needed, reply with "No corrections were needed". For every correction say "Corrected {missspelled word} to {correctly spelled word}".
+    Answer formatting should be as follows for this request only:
+    [MODIFIED_USER_INPUT]: {Your answer here}
+    [CORRECTIONS]: {List of corrections here, each correction on a new line}
+    [USER_INPUT]: `,
+      ''
+    )
+  }
+
+  if (content.includes('[MODIFICATION_REQUEST]: ')) {
+    content = content.replace('[MODIFICATION_REQUEST]: ', '')
+  }
+  console.log('removed prefixes?', content)
+  return content
+}

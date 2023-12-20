@@ -5,7 +5,7 @@ import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
 import type { AsyncComponentLoader } from 'vue'
 import * as Tone from 'tone'
 import type { ChatHistory } from '~/models/ChatHistory'
-import { registerActionsWithSynonyms, removeFormElementRoles } from '~/utils/CKEditor'
+import { registerActionsWithSynonyms, removeFormElementRoles, removeCallbackActionPrefix } from '~/utils/CKEditor'
 import type { AudioPlayer } from '~/models/AudioPlayer'
 import type { ChatMessage } from '~/models/ChatMessage'
 import type { Session } from '~/models/Session'
@@ -17,7 +17,6 @@ const { messages, input, handleSubmit, setMessages } = useChat({
 })
 
 onMounted(() => {
-  console.log('OnMounted has been called')
   sessions.value = JSON.parse(localStorage.getItem('sessions') || '[]')
   loadActiveSession()
   setInterval(() => {
@@ -61,6 +60,7 @@ const lastContextMenuAction = ref('')
 
 /** The reference to see whether we have reached the end of a streaming response from ChatGPT */
 const responseFinished = ref(false)
+const intermediateAnswerSynthesisCounter = ref(0)
 /** A global reference to de-allocated the periodic interval check to add new content when response is being streamed */
 const intervalId = ref({} as NodeJS.Timeout)
 
@@ -201,7 +201,6 @@ function storeSession(session: Session) {
       sessions.value[i] = session
     }
   })
-  console.log('Storing sessions, as session with id:', session.id, 'has been updated')
   localStorage.setItem('sessions', JSON.stringify(sessions.value))
 }
 
@@ -232,28 +231,6 @@ function loadActiveSession() {
   muteAllAudioplayers()
 }
 
-// TODO: Figure out how scrolling works properly for the ck4editor that is loaded in the iframe.
-// async function scrollToBottomTextEditor() {
-//   await nextTick()
-// let iframe = document.getElementsByTagName('iframe')[0]
-// iframe.contentWindow.scrollTo(0, iframe.contentDocument.body.scrollHeight)
-
-// var editor = CKEDITOR.instances.editor1
-// console.log(editor)
-// var doc = editor.document.$
-// console.log(doc)
-// console.log(doc.body)
-// let lastChild = doc.body.lastChild
-// console.log(lastChild)
-// lastChild.scrollIntoView()
-// setInterval(() => {
-
-// }, 1000)
-// iframe.bod
-
-// doc.scrollTop = (76 * window.innerHeight) / 100
-// }
-
 function toggleToolbar(): void {
   let toolbar = window.document.getElementsByClassName('cke_top')
   if (toolbar[0].getAttribute('style') === 'display: none') {
@@ -264,59 +241,13 @@ function toggleToolbar(): void {
 }
 
 function keyDownHandler(event: KeyboardEvent) {
-  // window.console.log(event)
   if (event.code === 'Escape') {
     showDrawer(false)
-    // set editor to read only mode
-    // toggleReadOnly(readOnly.value)
   }
   if (event.key === 'F8') {
     toggleToolbar()
   }
-  // only the first key press is registered in the iframe for a shortcut combination
-  // if (event.key === 'F9') {
-  //   let element = document.getElementById('cke_10')
-  //   element.focus()
-  // }
 }
-
-// function getLastTagFromSelection() {}
-
-// function findPastedText() {
-//   // Use cases to consider:
-//   // 1. Paste structured answer
-//   // 2. Paste answer with valid lastContextMenuAction (Modification)
-//   // 3. Paste regular answer
-//   let text = ''
-//   let element = ''
-//   const iframe = document.getElementsByTagName('iframe')[0]
-//   for (const a of iframe.contentDocument.querySelectorAll('a')) {
-//     if (a.textContent.includes('your search term')) {
-//       console.log(a.textContent)
-//     }
-//   }
-// }
-
-// function focusOnPastedContent(pastedContent: string) {
-//   console.log('focusOnPastedContent')
-//   console.log(pastedContent)
-// }
-
-// function focusOnEndOfEditor() {
-//   console.log('focusOnEndOfEditor')
-//   const iframe = document.getElementsByTagName('iframe')[0]
-//   const editor = iframe.contentDocument.getElementsByTagName('body')[0]
-//   editor.focus()
-//   console.log(editor)
-//   const lastChild = editor.lastChild
-//   console.log(lastChild)
-//   lastChild.setSelectionRange(editorContent.value.length, editorContent.value.length)
-
-//   // lastChild.setSelectionRange(caret, caret)
-//   // console.log(lastChild)
-//   // lastChild.scrollIntoView()
-//   lastChild.focus()
-// }
 
 /** Text completion submission wrapper */
 function submit(e: any): void {
@@ -358,8 +289,6 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
   // Setting the selected text from the text editor to the shared state
   selectedTextFromEditor = preprocessHtml(selectedTextFromEditor)
   selectedText.value = selectedTextFromEditor
-  // const selected = window.getSelection()
-
   if (prompt === 'STORE') {
     // selectedText.value = selectedTextFromEditor
     const chatInput = document.getElementById('chat-input')
@@ -553,62 +482,6 @@ function addPrefixToAssistantResponse(chatMessage: ChatMessage): void {
   ].message.content = `Answer ${messageInteractionCounter.value}\n${chatMessage.message.content}`
 }
 
-function removeCallbackActionPrefix(content: string): string {
-  console.log('removeCallbackActionPrefix')
-  console.log(content)
-  console.log(content.includes(`provide a numbered list of all things that were made shorter.`))
-  console.log(content.includes(`provide a numbered list of all things that were made simpler.`))
-  console.log(content.includes(`provide a numbered list of all things that were reformulated.`))
-  console.log(content.includes(`provide a numbered list of all corrections made.`))
-
-  if (content.includes(`provide a numbered list of all things that were made shorter.`)) {
-    content = content.replace(
-      `the following content, only re-use given html tags and provide a numbered list of all things that were made shorter.
-    If the text cannot be summarized better, reply with "Cannot summarize further".
-    Answer formatting should be as follows for this request only:
-    [MODIFIED_USER_INPUT]: {Your answer here}
-    [MODIFICATIONS]: {List of modifications here, each modification on a new line}
-    [USER_INPUT]: `,
-      ''
-    )
-  } else if (content.includes(`provide a numbered list of all things that were made simpler.`)) {
-    content = content.replace(
-      `only re-use given html tags and provide a numbered list of all things that were made simpler.
-    If the text cannot be made simpler, reply with "Cannot simplify text further".
-    Answer formatting should be as follows for this request only:
-    [MODIFIED_USER_INPUT]: {Your answer here}
-    [MODIFICATIONS]: {List of modifications here, each modification on a new line}
-    [USER_INPUT]: `,
-      ''
-    )
-  } else if (content.includes(`provide a numbered list of all things that were reformulated.`)) {
-    content = content.replace(
-      `the following content, only re-use given html tags and provide a numbered list of all things that were reformulated.
-    Answer formatting should be as follows for this request only:
-    [MODIFIED_USER_INPUT]: {Your answer here}
-    [MODIFICATIONS]: {List of modifications here, each modification on a new line}
-    [USER_INPUT]: `,
-      ''
-    )
-  } else if (content.includes(`provide a numbered list of all corrections made.`)) {
-    content = content.replace(
-      `only re-use given html tags and provide a numbered list of all corrections made.
-    If no correction are needed, reply with "No corrections were needed". For every correction say "Corrected {missspelled word} to {correctly spelled word}".
-    Answer formatting should be as follows for this request only:
-    [MODIFIED_USER_INPUT]: {Your answer here}
-    [CORRECTIONS]: {List of corrections here, each correction on a new line}
-    [USER_INPUT]: `,
-      ''
-    )
-  }
-
-  if (content.includes('[MODIFICATION_REQUEST]: ')) {
-    content = content.replace('[MODIFICATION_REQUEST]: ', '')
-  }
-  console.log('removed prefixes?', content)
-  return content
-}
-
 function addToChatHistory(message: Message) {
   if (message.role === 'user') {
     message.content = removeCallbackActionPrefix(message.content)
@@ -694,69 +567,77 @@ watch(messages, (_): void => {
           role: 'assistant',
           content: '',
         }
-        // Check if we can keep the order for messages
         if (!messages.value[messages.value.length - 1].content.includes('<ai-response>')) {
           newMessage.content = PROMPT_TAKES_A_WHILE
         }
         addToChatHistory(newMessage)
         synthesizeSpeech(newMessage.content, getLastEntryIndex())
-        // let tempEntry = getLastEntry()
-        // tempEntry.message.new = false
-        // intervalId.value = setInterval(() => {
-        //   synthesizeSpeech(newMessage.content, getLastEntryIndex())
-        // }, 5000)
       }
-      // focusPauseButton(getLastAssistantResponseIndex())
-    }, 6000)
+    }, 7000)
     return
   }
   console.log('Assistant Answer is new?', chatMessage.message.new)
   checkHTMLInResponse(message.content)
   addPrefixToAssistantResponse(chatMessage)
-  if (IsInlineModification(lastContextMenuAction.value)) {
-    console.log('isInlineModification', lastContextMenuAction.value)
-    if (
-      !chatMessage.message.content.includes('Here are the modifications') ||
-      !chatMessage.message.content.includes('Here are the corrections')
-    ) {
-      return
-    }
-  }
-  if (chatMessage.message.content.length > 300 && chatMessage.message.new === true) {
-    // do not read html tags
+  if (synthesizeIntermediateAnswer(chatMessage)) {
     chatMessage.message.content = removeHtmlTags(chatMessage.message.content)
-    chatMessage.message.new = false
-    if (chatMessage.message.content.includes('<ai-response>') || chatMessage.message.content.includes('<body>')) {
-      return
-    }
     addToVoiceResponse(chatMessage.message.content)
     synthesizeSpeech(chatMessage.message.content, getLastAssistantResponseIndex())
+    focusPauseButton(getLastAssistantResponseIndex())
   }
 })
 
+function synthesizeIntermediateAnswer(chatMessage: ChatMessage): boolean {
+  if (IsInlineModification(lastContextMenuAction.value)) {
+    console.log('isInlineModification', lastContextMenuAction.value)
+    console.log(chatMessage.message.content)
+    if (
+      !chatMessage.message.content.includes('Here are the modifications') &&
+      !chatMessage.message.content.includes('Here are the corrections')
+    ) {
+      return false
+    }
+  }
+  const inludesStructuredResponse = chatMessage.message.content.includes('ai-response')
+  if (inludesStructuredResponse) {
+    return false
+  }
+  console.log('intermediateAnswerSynthesisCounter', intermediateAnswerSynthesisCounter.value)
+  if (intermediateAnswerSynthesisCounter.value % 13 === 0) {
+    chatMessage.message.new = true
+  }
+
+  if (chatMessage.message.content.length > 200 && chatMessage.message.new === true) {
+    console.log('content', chatMessage.message.content)
+    chatMessage.message.new = false
+    intermediateAnswerSynthesisCounter.value = 1
+    return true
+  }
+  intermediateAnswerSynthesisCounter.value++
+  return false
+}
+
 watch(responseFinished, (_): void => {
   if (responseFinished.value) {
+    intermediateAnswerSynthesisCounter.value = 0
     activeSession.value = {
       id: activeSession.value.id,
       chatHistory: chatHistory,
       editorContent: editorContent.value,
     }
-    console.log('responseFinished')
     storeSession(activeSession.value)
-    console.log('storing session')
-    console.log(activeSession.value)
     // final run to finish the voice synthesis
     clearInterval(intervalId.value)
     responseFinished.value = false
-    const assistantResponse = chatHistory.messages[getLastEntryIndex()].message.content
-    checkHTMLInResponse(assistantResponse)
-    if (voiceResponse.value.includes(assistantResponse)) {
+    const assistantAnswer = chatHistory.messages[getLastEntryIndex()].message.content
+    checkHTMLInResponse(assistantAnswer)
+    if (voiceResponse.value.includes(assistantAnswer)) {
       return
     }
-    if (assistantResponse.includes('<ai-response>')) {
+    if (assistantAnswer.includes('<ai-response>')) {
       return
     }
-    addToVoiceResponse(assistantResponse)
+    addToVoiceResponse(assistantAnswer)
     // continue where we left off, do not start over
     voiceSynthesisStartOver.value = false
     synthesizeSpeech(voiceResponse.value, getLastAssistantResponseIndex())
@@ -786,18 +667,27 @@ watch(resynthesizeAudio, (_): void => {
   if (!resynthesizeAudio.value) {
     chatHistory.messages.forEach((message: ChatMessage) => {
       if (message.audioPlayer.id === resynthesizeAudioPlayerId.value) {
+        // resetting audio
         pausePlayer(message.audioPlayer)
         resumePlayer(message.audioPlayer)
-        // Small magic to wait, as internalAudio.duration is not available immediately
-        setTimeout(() => {
-          setTimeout(() => {
-            pausePlayer(message.audioPlayer)
-          }, message.audioPlayer.player.internalAudio.duration * 1000)
-        }, 200)
+        // necessary due to event not firing
+        pausePlayerAfterTimeout(message.audioPlayer)
       }
     })
   }
 })
+
+function pausePlayerAfterTimeout(audioPlayer: AudioPlayer) {
+  // Small magic to wait, as internalAudio.duration is not available immediately
+  // to addtionaly pause the audioPlayer after the audio has finished playing,
+  // as for some unknown reason the onAudioEnd does not fire for resynthesized audioPlayers
+  // https://github.com/microsoft/cognitive-services-speech-sdk-js/issues/699
+  setTimeout(() => {
+    setTimeout(() => {
+      pausePlayer(audioPlayer)
+    }, audioPlayer.player.internalAudio.duration * 1000)
+  }, 200)
+}
 
 function replaceExpression(assistantResponse: string, expression: RegExp) {
   // const expression = /<ai-response>([\s\S]*?)<\/ai-response>/
@@ -967,7 +857,6 @@ function paste(index: number) {
     synthesizeSpeech('Cannot paste, as no corrections were needed.', directResponseIndex)
     return
   }
-  console.log(chatHistory.messages[index].message.html)
   const isHtml = isHtmlAlreadyExtracted(replacementText) || chatHistory.messages[index].message.html
   if (isHtml) {
     replacementText = preprocessHtml(chatHistory.messages[index].message.html)
@@ -1170,7 +1059,6 @@ function configureAudioPlayer(index: number): AudioPlayer {
   audioPlayer.player.onAudioStart = () => {
     window.console.log('Audio track started')
     window.console.log('Index', index)
-    prevAudioPlayer.value.player.pause()
     if (chatHistory.messages[index].message.role === 'user') {
       window.console.log('This should be a user index:', index)
       window.console.log(chatHistory.messages[index])
@@ -1182,22 +1070,21 @@ function configureAudioPlayer(index: number): AudioPlayer {
       return
     }
     let currentTime = prevAudioPlayer.value.player.currentTime
-    console.log('lastSynthesizedText.value', lastSynthesizedText.value)
-    console.log(lastSynthesizedText.value !== PROMPT_TAKES_A_WHILE)
     if (
       currentTime !== invalidCurrentTime &&
       !voiceSynthesisStartOver.value &&
-      !chatHistory.messages[index].message.html &&
       lastSynthesizedText.value !== PROMPT_TAKES_A_WHILE
     ) {
       window.console.log('ARE WE GETTING IN HERE??', audioPlayer)
       // round to 2 decimal places
       audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
+      prevAudioPlayer.value.player.pause()
     }
     if (voiceSynthesisStartOver.value) {
       voiceSynthesisStartOver.value = false
     }
     chatHistory.messages[index].audioPlayer.muted = false
+    prevAudioPlayer.value.player.pause()
   }
   return audioPlayer
 }
@@ -1265,6 +1152,8 @@ function resumePlayer(audioPlayer: AudioPlayer): void {
   audioPlayer.player.resume()
   audioPlayer.muted = false
   audioPlayer.alreadyPlayed = true
+  // additional pause, as the onAudioEnd does not fire for resynthesized audioPlayers
+  pausePlayerAfterTimeout(audioPlayer)
 }
 
 function handlePause(entry: ChatMessage, index: number) {
@@ -1344,13 +1233,17 @@ function showDrawer(bool: boolean) {
   drawer.value = bool
 }
 
-function clearDocument() {
+function clearDocumentVars() {
   chatHistory.messages = []
   messages.value = []
   messageInteractionCounter.value = 0
   input.value = ''
   editorContent.value = ''
   voiceResponse.value = ''
+}
+
+function clearDocument() {
+  clearDocumentVars()
   activeSession.value = {
     id: activeSession.value.id,
     chatHistory: { messages: [] as ChatMessage[] },
@@ -1362,7 +1255,7 @@ function clearDocument() {
 }
 
 function createNewDocument() {
-  storeSession(getActiveSession())
+  muteAllAudioplayers()
   const newSession = {
     id: Date.now().toString(),
     chatHistory: { messages: [] as ChatMessage[] },
@@ -1370,12 +1263,13 @@ function createNewDocument() {
   }
   activeSession.value = newSession
   sessions.value.push(newSession)
-  clearDocument()
+  localStorage.setItem('sessions', JSON.stringify(sessions.value))
+  clearDocumentVars()
   showDrawer(false)
 }
 
 function clearAllDocuments() {
-  sessions.value = []
+  muteAllAudioplayers()
   localStorage.setItem('sessions', JSON.stringify([]))
   createNewDocument()
 }

@@ -160,7 +160,7 @@ async function improvePrompt(messages: Message[]) {
   Titles and abstracts should be written in a manner easily comprehensible to any scientist.
   Specialized but essential terms should be concisely explained without resorting to a didactic tone.
 
-  Here is an example of a well-structured research paper:
+  Here is an example of a well-structured research paper draft:
   Developing a Well-Structured Research Paper: Effective Strategies and Key Components
     In this comprehensive guide, you will find a detailed structure to assist you in composing a well-organized and coherent research paper. The provided structure encompasses various essential components, ensuring a thorough and impactful exploration of your topic. Follow the steps below to create a compelling paper:
     1. Introduction:
@@ -236,7 +236,7 @@ export default defineLazyEventHandler(async () => {
       lastMessage.content = improvedPrompt.concat(
         `
         Your answer formatting requirements:
-        - Please provide valid HTML tags for the structure of the document.
+        - Please provide valid HTML tags for the structure of the document. (<h1> for the title, <h2> for sections, <h3> for subsections and <p> for paragraphs)
         - Only reply with the content of the html body, do not include a <header> or a <footer>.
         - Also do not include any <script> or <style> tags, this includes no inline-styling.
         - If you don't know how to create valid HTML tags, try anyway.
