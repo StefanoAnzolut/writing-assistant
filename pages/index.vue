@@ -113,6 +113,15 @@ function removeExtraComponents(sleepTimer: number = 350) {
   }, sleepTimer)
 }
 
+function keyDownHandler(event: KeyboardEvent) {
+  if (event.code === 'Escape') {
+    showDrawer(false)
+  }
+  if (event.key === 'F8') {
+    toggleToolbar()
+  }
+}
+
 function clearEditorContent() {
   editorContent.value = ''
 }
@@ -213,15 +222,6 @@ function loadActiveSession() {
   muteAllAudioplayers()
 }
 
-function keyDownHandler(event: KeyboardEvent) {
-  if (event.code === 'Escape') {
-    showDrawer(false)
-  }
-  if (event.key === 'F8') {
-    toggleToolbar()
-  }
-}
-
 /** Text completion submission wrapper */
 function submit(e: any): void {
   if (input.value === '') {
@@ -240,19 +240,19 @@ function submit(e: any): void {
 }
 
 function setLastContextMenuAction(prompt: string): string {
+  let actionName = ''
   actions.forEach(action => {
     if (action.prompt === prompt) {
-      return action.name
+      actionName = action.name
     }
   })
-  return ''
+  return actionName
 }
 
 /** Submission wrapper for the callback action of the context menu */
 function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEditor: string) {
   const range = editor.value.getSelection().getRanges()[0]
   if (range === undefined) {
-    // no selection
     return
   }
   const innerHtml = getHTMLFromRange(range).replace('<br>', '')
@@ -262,11 +262,29 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     endOffset: range.endOffset,
     context: innerHtml,
   }
+
   lastContextMenuAction.value = setLastContextMenuAction(prompt)
-  // console.log(selectedTextFromEditor)
-  // Setting the selected text from the text editor to the shared state
   selectedTextFromEditor = preprocessHtml(selectedTextFromEditor)
   selectedText.value = selectedTextFromEditor
+
+  if (!needsAnswer(prompt, selectedTextFromEditor)) {
+    return
+  }
+  if (prompt.includes('[MODIFICATION_REQUEST]: Spell check')) {
+    input.value = input.value.concat(prompt + preprocessHtml(selectedTextProperties.value.context))
+  } else {
+    // console.log('Normal callback flow')
+    // console.log('selectedTextFromEditor:', selectedTextFromEditor)
+    // console.log('prompt:', prompt)
+    input.value = input.value.concat(prompt + selectedTextFromEditor)
+  }
+  handleSubmit(event)
+  setTimeout(() => {
+    console.log(messages.value)
+  }, 1000)
+}
+
+function needsAnswer(prompt: string, selectedTextFromEditor: string): boolean {
   if (prompt === 'STORE') {
     // selectedText.value = selectedTextFromEditor
     const chatInput = document.getElementById('chat-input')
@@ -274,73 +292,49 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
       chatInput.focus()
     }
     synthesizeSpeech('Stored the selected text, continue with asking your question!', directResponseIndex)
-    return
+    return false
   }
   if (selectedTextFromEditor === '') {
-    return
-  } else if (prompt === 'READ') {
-    synthesizeSpeech(selectedTextFromEditor.replace(/<[^>]*>/g, '\n'), readAloudPlayerIndex)
-    removeSelection()
-    return
-  } else if (prompt.includes('[MODIFICATION_REQUEST]: Spell check')) {
-    input.value = input.value.concat(prompt + preprocessHtml(selectedTextProperties.value.context))
-  } else if (prompt === 'SYNONYMS') {
+    return false
+  }
+  if (prompt === 'READ') {
+    synthesize(selectedTextFromEditor.replace(/<[^>]*>/g, '\n'), readAloudPlayerIndex)
+    return false
+  }
+  if (prompt === 'SYNONYMS') {
     if (selectedText.value.split(' ').length > 2) {
-      synthesizeSpeech(`Please select only one word to find synonyms for.`, directResponseIndex)
-      removeSelection()
-      return
+      synthesize(`Please select only one word to find synonyms for.`, directResponseIndex)
+      return false
     }
-    synthesizeSpeech(`No synonym found for ${selectedText.value}`, directResponseIndex)
-    removeSelection()
-    return
-  } else if (prompt === 'No synonyms found') {
-    synthesizeSpeech(`No synonym found for ${selectedText.value}`, directResponseIndex)
-    removeSelection()
-    return
-  } else if (prompt.includes('Replace with:')) {
+    synthesize(`No synonym found for ${selectedText.value}`, directResponseIndex)
+    return false
+  }
+  if (prompt === 'No synonyms found') {
+    synthesize(`No synonym found for ${selectedText.value}`, directResponseIndex)
+    return false
+  }
+  if (prompt.includes('Replace with:')) {
     let synonym = prompt.replace('Replace with:', '')
     let newContent = selectedTextPropertiesSynonyms.value.context.replace(selectedText.value.trim(), synonym)
     editorContent.value = editorContent.value.replace(selectedTextPropertiesSynonyms.value.context, newContent)
-    synthesizeSpeech(`Replaced ${selectedText.value} with ${synonym}`, directResponseIndex)
-    removeSelection()
-    return
-  } else {
-    // console.log('Normal callback flow')
-    // console.log('selectedTextFromEditor:', selectedTextFromEditor)
-    // console.log('prompt:', prompt)
-    input.value = input.value.concat(prompt + selectedTextFromEditor)
+    synthesize(`Replaced ${selectedText.value} with ${synonym}`, directResponseIndex)
+    return false
   }
-  // console.log('submitting')
-  handleSubmit(event)
-  // console.log('should be submitted')
-  setTimeout(() => {
-    console.log(messages.value)
-  }, 1000)
+  return true
+}
+
+function synthesize(text: string, index: number): void {
+  synthesizeSpeech(text, index)
+  removeSelection()
 }
 
 function removeSelection() {
   selectedText.value = ''
 }
 
-function setResponse(response: string) {
+function setAnswer(response: string) {
   response = response.replace(/\[.*?\]:\s*/, '')
   chatHistory.messages[getLastEntryIndex()].message.content = response
-}
-
-function addPrefixToAssistantResponse(chatMessage: ChatMessage): void {
-  const matchPrefix = chatMessage.message.content.match(/Answer (\d+)\n([\s\S]*)/)
-  if (matchPrefix) {
-    if (matchPrefix[2].includes('Answer')) {
-      chatMessage.message.content = matchPrefix[2]
-    } else {
-      chatMessage.message.content = `Answer ${messageInteractionCounter.value}\n${matchPrefix[2]}`
-    }
-    return
-  }
-  // Assistant responses without prefixes yet
-  chatHistory.messages[
-    getLastEntryIndex()
-  ].message.content = `Answer ${messageInteractionCounter.value}\n${chatMessage.message.content}`
 }
 
 function addToChatHistory(message: Message) {
@@ -348,21 +342,7 @@ function addToChatHistory(message: Message) {
     message.content = removeCallbackActionPrefix(message.content)
     messageInteractionCounter.value++
   }
-  let chatMessage = {
-    message: {
-      id: Date.now().toString(),
-      role: message.role,
-      content:
-        message.role === 'user'
-          ? `Prompt ${messageInteractionCounter.value}\n${message.content}`
-          : `Answer ${messageInteractionCounter.value}\n${message.content}`,
-      new: true,
-    },
-    audioPlayer: newAudioPlayer(),
-  } as ChatMessage
-
-  // reverse order unshift
-  chatHistory.messages.push(chatMessage)
+  chatHistory.messages.push(newChatMessage(message, messageInteractionCounter.value))
 }
 
 function isLastMessageUser() {
@@ -414,35 +394,43 @@ watch(messages, (_): void => {
   }
   let chatMessage = getLastEntry()
   if (chatMessage.message.role === 'user') {
-    console.log('User Prompt')
-    chatMessage.message.content = removeHtmlTags(chatMessage.message.content)
-    synthesizeSpeech(chatMessage.message.content, getLastEntryIndex())
-    setTimeout(() => {
-      if (isLastMessageUser()) {
-        let newMessage = {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: '',
-        }
-        if (!messages.value[messages.value.length - 1].content.includes('<ai-response>')) {
-          newMessage.content = PROMPT_TAKES_A_WHILE
-        }
-        addToChatHistory(newMessage)
-        synthesizeSpeech(newMessage.content, getLastEntryIndex())
-      }
-    }, 7000)
+    generateTakesAWhileAnswer(chatMessage)
     return
   }
-  console.log('Assistant Answer is new?', chatMessage.message.new)
-  checkHTMLInResponse(message.content)
-  addPrefixToAssistantResponse(chatMessage)
+  handleAssistantAnswer(chatMessage, message)
+})
+
+function handleAssistantAnswer(chatMessage: ChatMessage, message: Message): void {
+  // console.log('Assistant Answer is new?', chatMessage.message.new)
+  checkHTMLInAnswer(message.content)
+  addPrefixToAssistantAnswer(chatMessage, messageInteractionCounter.value)
   if (synthesizeIntermediateAnswer(chatMessage)) {
     chatMessage.message.content = removeHtmlTags(chatMessage.message.content)
     addToVoiceResponse(chatMessage.message.content)
     synthesizeSpeech(chatMessage.message.content, getLastAssistantResponseIndex())
     focusPauseButton(getLastAssistantResponseIndex())
   }
-})
+}
+
+/** if no answer is generated in the past 7 seconds we generate a takes a while answer */
+function generateTakesAWhileAnswer(chatMessage: ChatMessage) {
+  chatMessage.message.content = removeHtmlTags(chatMessage.message.content)
+  synthesizeSpeech(chatMessage.message.content, getLastEntryIndex())
+  setTimeout(() => {
+    if (isLastMessageUser()) {
+      let newMessage: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: '',
+      }
+      if (!messages.value[messages.value.length - 1].content.includes('<ai-response>')) {
+        newMessage.content = PROMPT_TAKES_A_WHILE
+      }
+      addToChatHistory(newMessage)
+      synthesizeSpeech(newMessage.content, getLastEntryIndex())
+    }
+  }, 7000)
+}
 
 function synthesizeIntermediateAnswer(chatMessage: ChatMessage): boolean {
   if (IsInlineModification(lastContextMenuAction.value)) {
@@ -487,7 +475,7 @@ watch(responseFinished, (_): void => {
     clearInterval(intervalId.value)
     responseFinished.value = false
     const assistantAnswer = chatHistory.messages[getLastEntryIndex()].message.content
-    checkHTMLInResponse(assistantAnswer)
+    checkHTMLInAnswer(assistantAnswer)
     if (voiceResponse.value.includes(assistantAnswer)) {
       return
     }
@@ -536,7 +524,6 @@ watch(resynthesizeAudio, (_): void => {
 })
 
 function replaceExpression(assistantResponse: string, expression: RegExp) {
-  // const expression = /<ai-response>([\s\S]*?)<\/ai-response>/
   const match = assistantResponse.match(expression)
   if (match && match[1]) {
     chatHistory.messages[getLastEntryIndex()].message.html = match[1].replace(/>\s+|\s+</g, m => m.trim())
@@ -546,34 +533,34 @@ function replaceExpression(assistantResponse: string, expression: RegExp) {
   const parts = assistantResponse.split(expression)
   if (parts.length === 1) {
     // Special case, where assistant response tag is included in response but the regex does not match
-    setResponse(assistantResponse)
+    setAnswer(assistantResponse)
   } else {
     parts[1] = parts[1].replace(match[1], HTML_EXTRACTION_PLACEHOLDER)
   }
   const textWithoutHtml = parts.join('')
-  setResponse(textWithoutHtml)
+  setAnswer(textWithoutHtml)
 }
 
-function checkHTMLInResponse(assistantResponse: string): void {
-  if (assistantResponse.includes(HTML_EXTRACTION_PLACEHOLDER)) {
-    setResponse(assistantResponse)
+function checkHTMLInAnswer(assistantAnswer: string): void {
+  if (assistantAnswer.includes(HTML_EXTRACTION_PLACEHOLDER)) {
+    setAnswer(assistantAnswer)
   }
-  if (assistantResponse.includes('<ai-response>')) {
-    replaceExpression(assistantResponse, /<ai-response>([\s\S]*?)<\/ai-response>/)
-  } else if (assistantResponse.includes('```html') || isHtmlAlreadyExtracted(assistantResponse)) {
-    replaceExpression(assistantResponse, /```html([\s\S]*?)```/)
-  } else if (assistantResponse.includes('<body>')) {
+  if (assistantAnswer.includes('<ai-response>')) {
+    replaceExpression(assistantAnswer, /<ai-response>([\s\S]*?)<\/ai-response>/)
+  } else if (assistantAnswer.includes('```html') || isHtmlAlreadyExtracted(assistantAnswer)) {
+    replaceExpression(assistantAnswer, /```html([\s\S]*?)```/)
+  } else if (assistantAnswer.includes('<body>')) {
     // Special case where html tags and ai-response tags are both missing
-    replaceExpression(assistantResponse, /<body>([\s\S]*?)<\/body>/)
+    replaceExpression(assistantAnswer, /<body>([\s\S]*?)<\/body>/)
   } else {
     if (IsInlineModification(lastContextMenuAction.value)) {
-      assistantResponse = handleContextMenuAction(
+      assistantAnswer = handleContextMenuAction(
         chatHistory.messages[getLastEntryIndex()],
-        assistantResponse,
+        assistantAnswer,
         lastContextMenuAction.value
       )
     }
-    setResponse(assistantResponse)
+    setAnswer(assistantAnswer)
   }
 }
 
@@ -584,14 +571,14 @@ async function assignNewSpeechRecognizer() {
 async function sttFromMic() {
   const start = Date.now()
   speechRecognizer.value.startContinuousRecognitionAsync()
-  speechRecognizer.value.recognizing = (_, e) => {
-    console.log(`RECOGNIZING: Text=${e.result.text}`)
-  }
+  // speechRecognizer.value.recognizing = (_, e) => {
+  //   console.log(`RECOGNIZING: Text=${e.result.text}`)
+  // }
 
   // Signals that the speech service has started to detect speech.
-  speechRecognizer.value.speechStartDetected = (_, e) => {
-    console.log('(speechStartDetected) SessionId: ' + e.sessionId)
-  }
+  // speechRecognizer.value.speechStartDetected = (_, e) => {
+  //   console.log('(speechStartDetected) SessionId: ' + e.sessionId)
+  // }
 
   speechRecognizer.value.recognized = (_, e) => {
     if (e.result.reason == speechsdk.ResultReason.RecognizedSpeech) {
@@ -606,15 +593,15 @@ async function sttFromMic() {
     }
   }
 
-  speechRecognizer.value.sessionStopped = (s, e) => {
+  speechRecognizer.value.sessionStopped = (_, e) => {
     console.log('\n    Session stopped event.')
     speechRecognizer.value.stopContinuousRecognitionAsync()
   }
-  speechRecognizer.value.sessionStarted = (s, e) => {
+  speechRecognizer.value.sessionStarted = (_, e) => {
     new Tone.Synth().toDestination().triggerAttackRelease('C4', '8n')
     const end = Date.now()
     console.log(`Speech recognizer start up time: ${end - start} ms`)
-    console.log('\n    Session started event.')
+    // console.log('\n    Session started event.')
   }
 }
 
@@ -797,66 +784,52 @@ function ifUserAnswerIsBeingReadAloud(index: number) {
 }
 
 function configureAudioPlayer(index: number): AudioPlayer {
+  let chatMessage = chatHistory.messages[index]
   let audioPlayer = updateAudioPlayer(chatHistory.messages[index])
   audioPlayer.player.onAudioEnd = audioPlayer => {
-    window.console.log('Audio track ended')
     audioPlayer.pause()
     // reverse order
-    chatHistory.messages[index].audioPlayer.muted = true
+    chatMessage.audioPlayer.muted = true
     if (index - 1 > 0) {
       // sanity check
       chatHistory.messages[index - 1].audioPlayer.muted = true
     }
-    // if (chatHistory.messages[index].message.role === 'user') {
-    chatHistory.messages[index].audioPlayer.alreadyPlayed = true
-    // }
-
-    if (
-      chatHistory.messages[getLastEntryIndex()] &&
-      chatHistory.messages[getLastEntryIndex()].message.role === 'assistant' &&
-      !chatHistory.messages[getLastEntryIndex()].audioPlayer.alreadyPlayed
-    ) {
-      // reverse order
-      let nextAudioPlayer = getAudioPlayer(chatHistory.messages[getLastEntryIndex()])
-      nextAudioPlayer.player.resume()
-      nextAudioPlayer.muted = false
-      chatHistory.messages[getLastEntryIndex()].audioPlayer.alreadyPlayed = true
-      // reverse order
-      focusPauseButton(getLastEntryIndex())
-    }
+    chatMessage.audioPlayer.alreadyPlayed = true
+    playAssistantAnswerInResponseToUserPrompt(chatHistory.messages[getLastEntryIndex()], getLastEntryIndex())
   }
 
   audioPlayer.player.onAudioStart = () => {
-    window.console.log('Audio track started')
-    window.console.log('Index', index)
-    if (chatHistory.messages[index].message.role === 'user') {
-      window.console.log('This should be a user index:', index)
-      window.console.log(chatHistory.messages[index])
+    if (chatMessage.message.role === 'user') {
       focusPauseButton(index)
     }
     const isStillPlaying = ifUserAnswerIsBeingReadAloud(index)
     if (isStillPlaying) {
-      focusPauseButton(index + 1)
+      if (index + 1 < chatHistory.messages.length) {
+        focusPauseButton(index + 1)
+      }
       return
     }
-    let currentTime = prevAudioPlayer.value.player.currentTime
-    if (
-      currentTime !== invalidCurrentTime &&
-      !voiceSynthesisStartOver.value &&
-      lastSynthesizedText.value !== PROMPT_TAKES_A_WHILE
-    ) {
-      window.console.log('ARE WE GETTING IN HERE??', audioPlayer)
-      // round to 2 decimal places
-      audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
-      prevAudioPlayer.value.player.pause()
-    }
-    if (voiceSynthesisStartOver.value) {
-      voiceSynthesisStartOver.value = false
-    }
-    chatHistory.messages[index].audioPlayer.muted = false
+    checkAndSetContinuousAnswer(audioPlayer)
+    chatMessage.audioPlayer.muted = false
     prevAudioPlayer.value.player.pause()
   }
   return audioPlayer
+}
+
+function checkAndSetContinuousAnswer(audioPlayer: AudioPlayer): void {
+  let currentTime = prevAudioPlayer.value.player.currentTime
+  if (
+    currentTime !== invalidCurrentTime &&
+    !voiceSynthesisStartOver.value &&
+    lastSynthesizedText.value !== PROMPT_TAKES_A_WHILE
+  ) {
+    // round to 2 decimal places
+    audioPlayer.player.internalAudio.currentTime = Math.round(currentTime * 100) / 100
+    prevAudioPlayer.value.player.pause()
+  }
+  if (voiceSynthesisStartOver.value) {
+    voiceSynthesisStartOver.value = false
+  }
 }
 
 function configureReadAloudAudioPlayer(newlyAudioPlayer: AudioPlayer): AudioPlayer {
@@ -895,25 +868,26 @@ function handlePause(entry: ChatMessage, index: number) {
     resumePlayer(entry.audioPlayer)
     return
   }
-  // Structured response handling
+  handleStructuredResponsePause(entry, index)
+}
+
+function handleStructuredResponsePause(entry: ChatMessage, index: number): void {
   if (entry.message.showHtml) {
     if (voiceResponse.value === entry.message.contentHtml) {
       muteAllAudioplayers()
       resumePlayer(entry.audioPlayer)
     } else {
-      voiceSynthesisStartOver.value = true
-      resynthesizeAudio.value = true
-      synthesizeSpeech(entry.message.contentHtml, index)
-      voiceResponse.value = entry.message.contentHtml
+      if (typeof entry.message.contentHtml === 'string') {
+        resynthesizeMessageContent(entry.message.contentHtml, index)
+        voiceResponse.value = entry.message.contentHtml
+      }
     }
   } else {
     if (voiceResponse.value === entry.message.content) {
       muteAllAudioplayers()
       resumePlayer(entry.audioPlayer)
     } else {
-      voiceSynthesisStartOver.value = true
-      resynthesizeAudio.value = true
-      synthesizeSpeech(entry.message.content, index)
+      resynthesizeMessageContent(entry.message.content, index)
       addToVoiceResponse(entry.message.content)
     }
   }
@@ -937,20 +911,28 @@ function pause(entry: ChatMessage, index: number) {
     handlePause(entry, index)
     return
   }
-  // TODO: Investigate why the onAudioEnd does not fire when starting from a stored session
+
+  structuredResponsePause(entry, index)
+}
+
+function resynthesizeMessageContent(content: string, index: number) {
+  voiceSynthesisStartOver.value = true
+  resynthesizeAudio.value = true
+  synthesizeSpeech(content, index)
+}
+
+function structuredResponsePause(entry: ChatMessage, index: number) {
   if (entry.message.showHtml) {
     generateReadableHTML(entry)
-    voiceSynthesisStartOver.value = true
-    resynthesizeAudio.value = true
-    synthesizeSpeech(entry.message.contentHtml, index)
+    if (typeof entry.message.contentHtml === 'string') {
+      resynthesizeMessageContent(entry.message.contentHtml, index)
+      voiceResponse.value = entry.message.contentHtml
+    }
     resynthesizeAudioPlayerId.value = chatHistory.messages[index].audioPlayer.id
-    voiceResponse.value = entry.message.contentHtml
   } else {
-    voiceSynthesisStartOver.value = true
-    resynthesizeAudio.value = true
-    synthesizeSpeech(entry.message.content, index)
-    resynthesizeAudioPlayerId.value = chatHistory.messages[index].audioPlayer.id
+    resynthesizeMessageContent(entry.message.content, index)
     addToVoiceResponse(entry.message.content)
+    resynthesizeAudioPlayerId.value = chatHistory.messages[index].audioPlayer.id
   }
 }
 

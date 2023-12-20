@@ -228,12 +228,12 @@ export function updateRegisteredActionsWithSynonyms(
 }
 
 export function removeCallbackActionPrefix(content: string): string {
-  console.log('removeCallbackActionPrefix')
-  console.log(content)
-  console.log(content.includes(`provide a numbered list of all things that were made shorter.`))
-  console.log(content.includes(`provide a numbered list of all things that were made simpler.`))
-  console.log(content.includes(`provide a numbered list of all things that were reformulated.`))
-  console.log(content.includes(`provide a numbered list of all corrections made.`))
+  // console.log('removeCallbackActionPrefix')
+  // console.log(content)
+  // console.log(content.includes(`provide a numbered list of all things that were made shorter.`))
+  // console.log(content.includes(`provide a numbered list of all things that were made simpler.`))
+  // console.log(content.includes(`provide a numbered list of all things that were reformulated.`))
+  // console.log(content.includes(`provide a numbered list of all corrections made.`))
 
   if (content.includes(`provide a numbered list of all things that were made shorter.`)) {
     content = content.replace(

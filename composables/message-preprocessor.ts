@@ -21,6 +21,20 @@ export function preprocessAssistantMessage(message: Message): Message {
   return message
 }
 
+export function addPrefixToAssistantAnswer(chatMessage: ChatMessage, messageInteractionCounter: number): void {
+  const matchPrefix = chatMessage.message.content.match(/Answer (\d+)\n([\s\S]*)/)
+  if (matchPrefix) {
+    if (matchPrefix[2].includes('Answer')) {
+      chatMessage.message.content = matchPrefix[2]
+    } else {
+      chatMessage.message.content = `Answer ${messageInteractionCounter}\n${matchPrefix[2]}`
+    }
+    return
+  }
+  // Assistant responses without prefixes yet
+  chatMessage.message.content = `Answer ${messageInteractionCounter}\n${chatMessage.message.content}`
+}
+
 export function isFinished(assistantAnswer: string) {
   return assistantAnswer.includes('2:"[{\\"done\\":true}]"')
 }
@@ -70,4 +84,19 @@ export function handleContextMenuAction(
     assistantResponse = assistantResponse.replace(/\[USER_INPUT\](.*)$/s, '')
   }
   return assistantResponse.trim()
+}
+
+export function newChatMessage(message: Message, messageInteractionCounter: number): ChatMessage {
+  return {
+    message: {
+      id: Date.now().toString(),
+      role: message.role,
+      content:
+        message.role === 'user'
+          ? `Prompt ${messageInteractionCounter}\n${message.content}`
+          : `Answer ${messageInteractionCounter}\n${message.content}`,
+      new: true,
+    },
+    audioPlayer: newAudioPlayer(),
+  }
 }
