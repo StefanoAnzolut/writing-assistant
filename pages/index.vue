@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { useChat, type Message } from 'ai/vue'
-import { getTokenOrRefresh } from '~/utils/token_util'
 import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
-import type { AsyncComponentLoader } from 'vue'
 import * as Tone from 'tone'
+
+import type { AsyncComponentLoader } from 'vue'
 import type { ChatHistory } from '~/models/ChatHistory'
-import { registerActionsWithSynonyms, removeFormElementRoles, removeCallbackActionPrefix } from '~/utils/CKEditor'
 import type { AudioPlayer } from '~/models/AudioPlayer'
 import type { ChatMessage } from '~/models/ChatMessage'
 import type { Session } from '~/models/Session'
-import { generateReadableTextFromHTML } from '~/utils/htmlReader'
 
 const thesaurus = await import('thesaurus')
 const { messages, input, handleSubmit, setMessages } = useChat({
@@ -22,9 +20,9 @@ onMounted(() => {
   setInterval(() => {
     storeSession(getActiveSession())
   }, 60000) // every minute
-  setupSpeechRecognizer()
+  assignNewSpeechRecognizer()
   setInterval(() => {
-    setupSpeechRecognizer()
+    assignNewSpeechRecognizer()
   }, 590000) // every 9.8 minutes
   window.addEventListener('keydown', keyDownHandler)
 })
@@ -66,12 +64,11 @@ const intervalId = ref({} as NodeJS.Timeout)
 
 /** SpeechRecognizer */
 const speechRecognizer = ref({} as speechsdk.SpeechRecognizer)
-/** The selected speaker for Text-To-Speech */
-const selectedSpeaker = ref('Jenny')
 const voiceSynthesisStartOver = ref(false)
 const lastSynthesizedText = ref('')
 const resynthesizeAudio = ref(false)
 const resynthesizeAudioPlayerId = ref('')
+
 /** Voice response from ChatGPT */
 const voiceResponse = ref('')
 
@@ -80,6 +77,8 @@ const prevAudioPlayer = ref({} as AudioPlayer)
 /** Read aloud audio player and it's overlay flag */
 const readAloudAudioPlayer = ref({} as AudioPlayer)
 const showReadAloudAudioPlayer = ref({ show: false })
+
+/** AudioPlayer special indices  */
 const directResponseIndex = -1
 const readAloudPlayerIndex = -2
 const invalidCurrentTime = -1
@@ -100,11 +99,7 @@ if (process.client) {
 }
 function onNamespaceLoaded() {
   CKEDITOR.on('instanceReady', function (ck: { editor: any }) {
-    ck.editor.removeMenuItem('cut')
-    ck.editor.removeMenuItem('copy')
-    ck.editor.removeMenuItem('paste')
-    registerActions(ck.editor, submitSelectedCallback)
-    removeFormElementRoles()
+    prepareCKEditor(ck.editor, submitSelectedCallback)
     editor.value = ck.editor
   })
 
@@ -114,20 +109,7 @@ function onNamespaceLoaded() {
 
 function removeExtraComponents(sleepTimer: number = 350) {
   setTimeout(() => {
-    let toolbar = document.getElementsByClassName('cke_top')
-    toolbar[0].setAttribute('style', 'display: none')
-
-    let bottomBar = document.getElementsByClassName('cke_bottom')
-    bottomBar[0].setAttribute('style', 'display: none')
-
-    let textAreaElements = document.getElementsByClassName('cke_contents cke_reset')
-    textAreaElements[0].setAttribute('style', 'height: 80vh !important;')
-
-    let textAreaForm = document.getElementsByTagName('TEXTAREA')
-    textAreaForm[0].remove()
-
-    const editorIframe = document.getElementsByTagName('iframe')[0]
-    editorIframe.contentWindow.document.addEventListener('keydown', keyDownHandler)
+    updateCKEditor(keyDownHandler)
   }, sleepTimer)
 }
 
@@ -231,15 +213,6 @@ function loadActiveSession() {
   muteAllAudioplayers()
 }
 
-function toggleToolbar(): void {
-  let toolbar = window.document.getElementsByClassName('cke_top')
-  if (toolbar[0].getAttribute('style') === 'display: none') {
-    toolbar[0].setAttribute('style', 'display: block')
-  } else {
-    toolbar[0].setAttribute('style', 'display: none')
-  }
-}
-
 function keyDownHandler(event: KeyboardEvent) {
   if (event.code === 'Escape') {
     showDrawer(false)
@@ -266,6 +239,15 @@ function submit(e: any): void {
   }, 1000)
 }
 
+function setLastContextMenuAction(prompt: string): string {
+  actions.forEach(action => {
+    if (action.prompt === prompt) {
+      return action.name
+    }
+  })
+  return ''
+}
+
 /** Submission wrapper for the callback action of the context menu */
 function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEditor: string) {
   const range = editor.value.getSelection().getRanges()[0]
@@ -274,18 +256,14 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     return
   }
   const innerHtml = getHTMLFromRange(range).replace('<br>', '')
-  console.log(innerHtml)
+  // console.log(innerHtml)
   selectedTextProperties.value = {
     startOffset: range.startOffset,
     endOffset: range.endOffset,
     context: innerHtml,
   }
-  actions.forEach(action => {
-    if (action.prompt === prompt) {
-      lastContextMenuAction.value = action.name
-    }
-  })
-  console.log(selectedTextFromEditor)
+  lastContextMenuAction.value = setLastContextMenuAction(prompt)
+  // console.log(selectedTextFromEditor)
   // Setting the selected text from the text editor to the shared state
   selectedTextFromEditor = preprocessHtml(selectedTextFromEditor)
   selectedText.value = selectedTextFromEditor
@@ -327,14 +305,14 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     removeSelection()
     return
   } else {
-    console.log('Normal callback flow')
-    console.log('selectedTextFromEditor:', selectedTextFromEditor)
-    console.log('prompt:', prompt)
+    // console.log('Normal callback flow')
+    // console.log('selectedTextFromEditor:', selectedTextFromEditor)
+    // console.log('prompt:', prompt)
     input.value = input.value.concat(prompt + selectedTextFromEditor)
   }
-  console.log('submitting')
+  // console.log('submitting')
   handleSubmit(event)
-  console.log('should be submitted')
+  // console.log('should be submitted')
   setTimeout(() => {
     console.log(messages.value)
   }, 1000)
@@ -344,126 +322,9 @@ function removeSelection() {
   selectedText.value = ''
 }
 
-function getHTMLFromRange(range: any): string {
-  const acceptedElements = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL']
-  let startContainer = range.startContainer.$
-  let endContainer = range.endContainer.$
-  console.log(range)
-  console.log(startContainer.isEqualNode(endContainer))
-  if (startContainer.isEqualNode(endContainer)) {
-    // Check whether the startContainer is a text node or an element node
-    if (startContainer.nodeType === 3) {
-      // text node => so we fallback to parentElement
-      return preprocessHtml(startContainer.parentElement.outerHTML)
-    }
-    console.log('startContainer:', startContainer)
-    return getOuterHtml(startContainer, acceptedElements)
-  }
-  if (startContainer.nodeType === 3) {
-    // text node => so we fallback to parentElement
-    startContainer = startContainer.parentElement
-  }
-  if (endContainer.nodeType === 3) {
-    // text node => so we fallback to parentElement
-    endContainer = endContainer.parentElement
-  }
-  console.log('Entering with startContainerParent:', startContainer)
-  console.log('Entering with endContainerParent:', endContainer)
-  const outerHtmlStart = getOuterHtml(startContainer, acceptedElements)
-  const outerHtmlEnd = getOuterHtml(endContainer, acceptedElements)
-  let documentInner = range.document.$.body.innerHTML
-  let outerHtmlForRange = documentInner.substring(
-    documentInner.indexOf(outerHtmlStart),
-    documentInner.lastIndexOf(outerHtmlEnd) + outerHtmlEnd.length
-  )
-  // remove html char codes and symbols that appear when copy pasting from different locations
-  return preprocessHtml(outerHtmlForRange)
-}
-
-function getOuterHtml(element: Element, acceptedElements: string[]): string {
-  if (acceptedElements.some(p => element.tagName.includes(p))) {
-    // replace <br> which can appear out of nowhere for the text editor
-    return preprocessHtml(element.outerHTML.replace('<br>', ''))
-  }
-  return getOuterHtml(element.parentElement, acceptedElements)
-}
-
-function preprocessUserMessage(message: Message): Message {
-  message.content = message.content.replace('<text>', '').replace('</text>', '')
-  if (message.content.includes('Spell check the following content')) {
-    message.content = 'Spell checking your highlighted text.'
-  }
-  message.content = message.content.replace('Spell check the following content', '').replace('</text>', '')
-  if (message.content.includes('Summarize the following content')) {
-    message.content = 'Summarizing your highlighted text.'
-  }
-  message.content = message.content.replace('Summarize the following content', '').replace('</text>', '')
-  return message
-}
-
-/** As we have modified the chat reponse to include the finish_reason to mark the end of the stream. We need to have some pre-processing. */
-function preprocessMessage(message: Message): Message {
-  responseFinished.value = isFinished(message.content)
-  message.content = message.content.replace('2:"[{\\"done\\":true}]"', '')
-  message.content = message.content.trim()
-  // if (message.content.includes('[MODIFIED_USER_INPUT]:') && message.content.includes('[CORRECTIONS]:')) {
-  // message.content = handleSpellChecking(message.content)
-  // handleSpellChecking(message)
-  // }
-  return message
-}
-
-function handleContextMenuAction(assistantResponse: string): string {
-  let chatMessage = getLastEntry()
-  let regex = /\[MODIFIED_USER_INPUT\]:(.*?)\[MODIFICATIONS\]:/s
-  let match = assistantResponse.match(regex)
-  console.log(match)
-  if (match && match[1]) {
-    assistantResponse = assistantResponse.replace(match[1], '')
-    // if (lastContextMenuAction.value === 'checkSpelling') {
-    chatMessage.message.html = match[1].trim()
-    // lastContextMenuAction.value = ''
-    // handleModificationRequest(match[1].trim())
-    // }
-  }
-  // content = content.replace('[MODIFIED_USER_INPUT]:', '')
-  if (
-    assistantResponse.includes('[MODIFICATIONS]:') &&
-    (lastContextMenuAction.value === 'summarize' ||
-      lastContextMenuAction.value === 'simplify' ||
-      lastContextMenuAction.value === 'reformulate')
-  ) {
-    if (
-      assistantResponse.includes('Cannot summarize further') ||
-      assistantResponse.includes('Cannot simplify text further')
-    ) {
-      assistantResponse = assistantResponse.replace('[MODIFICATIONS]:', '')
-    } else {
-      assistantResponse = assistantResponse.replace(
-        '[MODIFICATIONS]:',
-        'Here are the modifications, use the paste button to apply them.'
-      )
-    }
-  }
-
-  if (assistantResponse.includes('[MODIFICATIONS]:') && lastContextMenuAction.value === 'checkSpelling') {
-    if (assistantResponse.includes('No corrections were needed')) {
-      assistantResponse = assistantResponse.replace('[MODIFICATIONS]:', '')
-    } else {
-      assistantResponse = assistantResponse.replace(
-        '[MODIFICATIONS]:',
-        'Here are the corrections, use the paste button to apply them.'
-      )
-    }
-  }
-  if (assistantResponse.includes('[USER_INPUT]')) {
-    assistantResponse = assistantResponse.replace(/\[USER_INPUT\](.*)$/s, '')
-  }
-  return assistantResponse.trim()
-}
-
-function isFinished(message: string) {
-  return message.includes('2:"[{\\"done\\":true}]"')
+function setResponse(response: string) {
+  response = response.replace(/\[.*?\]:\s*/, '')
+  chatHistory.messages[getLastEntryIndex()].message.content = response
 }
 
 function addPrefixToAssistantResponse(chatMessage: ChatMessage): void {
@@ -497,12 +358,7 @@ function addToChatHistory(message: Message) {
           : `Answer ${messageInteractionCounter.value}\n${message.content}`,
       new: true,
     },
-    audioPlayer: {
-      player: new speechsdk.SpeakerAudioDestination(),
-      id: Date.now().toString(),
-      muted: true,
-      alreadyPlayed: false,
-    },
+    audioPlayer: newAudioPlayer(),
   } as ChatMessage
 
   // reverse order unshift
@@ -547,7 +403,8 @@ watch(messages, (_): void => {
 
   let message = messages.value[messages.value.length - 1]
   if (message.role === 'assistant') {
-    message = preprocessMessage(message)
+    responseFinished.value = isFinished(message.content)
+    message = preprocessAssistantMessage(message)
   }
   if (message.role === 'user') {
     message = preprocessUserMessage(message)
@@ -589,8 +446,8 @@ watch(messages, (_): void => {
 
 function synthesizeIntermediateAnswer(chatMessage: ChatMessage): boolean {
   if (IsInlineModification(lastContextMenuAction.value)) {
-    console.log('isInlineModification', lastContextMenuAction.value)
-    console.log(chatMessage.message.content)
+    // console.log('isInlineModification', lastContextMenuAction.value)
+    // console.log(chatMessage.message.content)
     if (
       !chatMessage.message.content.includes('Here are the modifications') &&
       !chatMessage.message.content.includes('Here are the corrections')
@@ -602,13 +459,13 @@ function synthesizeIntermediateAnswer(chatMessage: ChatMessage): boolean {
   if (inludesStructuredResponse) {
     return false
   }
-  console.log('intermediateAnswerSynthesisCounter', intermediateAnswerSynthesisCounter.value)
+  // console.log('intermediateAnswerSynthesisCounter', intermediateAnswerSynthesisCounter.value)
   if (intermediateAnswerSynthesisCounter.value % 13 === 0) {
     chatMessage.message.new = true
   }
 
   if (chatMessage.message.content.length > 200 && chatMessage.message.new === true) {
-    console.log('content', chatMessage.message.content)
+    // console.log('content', chatMessage.message.content)
     chatMessage.message.new = false
     intermediateAnswerSynthesisCounter.value = 1
     return true
@@ -669,6 +526,7 @@ watch(resynthesizeAudio, (_): void => {
       if (message.audioPlayer.id === resynthesizeAudioPlayerId.value) {
         // resetting audio
         pausePlayer(message.audioPlayer)
+        muteAllAudioplayers()
         resumePlayer(message.audioPlayer)
         // necessary due to event not firing
         pausePlayerAfterTimeout(message.audioPlayer)
@@ -676,18 +534,6 @@ watch(resynthesizeAudio, (_): void => {
     })
   }
 })
-
-function pausePlayerAfterTimeout(audioPlayer: AudioPlayer) {
-  // Small magic to wait, as internalAudio.duration is not available immediately
-  // to addtionaly pause the audioPlayer after the audio has finished playing,
-  // as for some unknown reason the onAudioEnd does not fire for resynthesized audioPlayers
-  // https://github.com/microsoft/cognitive-services-speech-sdk-js/issues/699
-  setTimeout(() => {
-    setTimeout(() => {
-      pausePlayer(audioPlayer)
-    }, audioPlayer.player.internalAudio.duration * 1000)
-  }, 200)
-}
 
 function replaceExpression(assistantResponse: string, expression: RegExp) {
   // const expression = /<ai-response>([\s\S]*?)<\/ai-response>/
@@ -721,24 +567,18 @@ function checkHTMLInResponse(assistantResponse: string): void {
     replaceExpression(assistantResponse, /<body>([\s\S]*?)<\/body>/)
   } else {
     if (IsInlineModification(lastContextMenuAction.value)) {
-      assistantResponse = handleContextMenuAction(assistantResponse)
+      assistantResponse = handleContextMenuAction(
+        chatHistory.messages[getLastEntryIndex()],
+        assistantResponse,
+        lastContextMenuAction.value
+      )
     }
     setResponse(assistantResponse)
   }
 }
 
-async function setupSpeechRecognizer() {
-  const tokenObj = await getTokenOrRefresh()
-  const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
-  speechConfig.speechRecognitionLanguage = 'en-US'
-  // Speech_SegmentationSilenceTimeoutMs = 32
-  // https://learn.microsoft.com/en-us/javascript/api/microsoft-cognitiveservices-speech-sdk/propertyid?view=azure-node-latest
-  speechConfig.setProperty(32, '3000')
-  // Todo: Check additional effort to inlcude auto-detection of language
-  speechRecognizer.value = new speechsdk.SpeechRecognizer(
-    speechConfig,
-    speechsdk.AudioConfig.fromDefaultMicrophoneInput()
-  )
+async function assignNewSpeechRecognizer() {
+  speechRecognizer.value = await setupSpeechRecognizer()
 }
 
 async function sttFromMic() {
@@ -782,11 +622,6 @@ function addToVoiceResponse(assistantResponse: string) {
   voiceResponse.value = removeHtmlTags(assistantResponse)
 }
 
-function IsInlineModification(action: string) {
-  const modifcationActions = ['summarize', 'checkSpelling', 'simplify', 'reformulate', 'concise']
-  return modifcationActions.includes(action)
-}
-
 function insertParagraphWise(paragraphs: string[]) {
   for (const paragraph of paragraphs) {
     paragraph.trim()
@@ -797,32 +632,6 @@ function insertParagraphWise(paragraphs: string[]) {
     editorContent.value = editorContent.value.concat(`<p>${paragraph}</p>`)
   }
   // focusOnEndOfEditor()
-}
-
-function isHtmlAlreadyExtracted(assistantResponse: string): boolean {
-  return assistantResponse.includes(HTML_EXTRACTION_PLACEHOLDER)
-}
-
-function preprocessHtml(content: string): string {
-  // remove char codes
-  const decodedHTMLCharCodes = content.replace(/(&#(\d+);)/g, (match, capture, charCode) =>
-    String.fromCharCode(charCode)
-  )
-  // remove html codes
-  const decodedHTMLCodes = decodedHTMLCharCodes
-    .replace(/&amp;/g, '&')
-    .replace(/&gt;/g, '>')
-    .replace(/&lt;/g, '<')
-    .replace(/&quot;/g, '"')
-    .replace(/&nbsp;/g, ' ')
-  // filter out href link with attribute data-cke-saved-href
-  const filteredHrefHTML = decodedHTMLCodes.replace(/ data-cke-saved-href="[^"]*"/g, '')
-
-  return filteredHrefHTML
-}
-
-function containsHtmlTags(content: string): boolean {
-  return /<[^>]*>/g.test(content)
 }
 
 function handleModificationRequest(content: string) {
@@ -916,56 +725,17 @@ function getLastAssistantResponseIndex(): number {
   return lastAssistantResponseIndex
 }
 
-function getAudioPlayer(index: number): AudioPlayer {
-  return chatHistory.messages[index].audioPlayer
-}
-
-async function focusReadAloudPauseButton() {
-  await nextTick()
-  let playPauseButtonReadAloudId = document.getElementById('playPauseButtonReadAloud')
-  if (playPauseButtonReadAloudId !== null) {
-    playPauseButtonReadAloudId.focus()
-  } else {
-    focusReadAloudPauseButton()
-  }
-}
-
-function newAudioPlayer(index: number): AudioPlayer {
-  return {
-    player: new speechsdk.SpeakerAudioDestination(),
-    id: Date.now().toString(),
-    muted: true,
-    alreadyPlayed:
-      chatHistory.messages[index] && chatHistory.messages[index].audioPlayer.alreadyPlayed === true ? true : false,
-    resynthesizeAudio: false,
-  }
-}
-
-async function setupSpeechConfig(): Promise<speechsdk.SpeechConfig> {
-  const tokenObj = await getTokenOrRefresh()
-  const speechConfig = speechsdk.SpeechConfig.fromAuthorizationToken(tokenObj.authToken, tokenObj.region)
-  /** Leni & Jan für CH. Alle weiteren findet man hier: https://speech.microsoft.com/portal/voicegallery */
-  if (selectedSpeaker.value === 'Jenny' || selectedSpeaker.value === 'Andrew') {
-    speechConfig.speechSynthesisLanguage = 'en-US'
-    speechConfig.speechSynthesisVoiceName = `en-US-${selectedSpeaker.value}Neural`
-  } else {
-    speechConfig.speechSynthesisLanguage = 'en-GB'
-    speechConfig.speechSynthesisVoiceName = `en-GB-${selectedSpeaker.value}Neural`
-  }
-  return speechConfig
-}
-
 async function synthesizeSpeech(text: string, index: number) {
   if (text === '') {
     return
   }
-  let audioPlayer = newAudioPlayer(index)
+  let audioPlayer = updateAudioPlayer(chatHistory.messages[index])
   if (index === directResponseIndex) {
     muteAllAudioplayers()
   } else if (index === readAloudPlayerIndex) {
     readAloudAudioPlayer.value = configureReadAloudAudioPlayer(audioPlayer)
   } else {
-    prevAudioPlayer.value = getAudioPlayer(index)
+    prevAudioPlayer.value = getAudioPlayer(chatHistory.messages[index])
     audioPlayer.player = configureAudioPlayer(index).player
     chatHistory.messages[index].audioPlayer = audioPlayer
   }
@@ -974,7 +744,7 @@ async function synthesizeSpeech(text: string, index: number) {
 
 async function speak(textToSpeak: string, index: number, player: speechsdk.SpeakerAudioDestination): Promise<void> {
   const audioConfig = speechsdk.AudioConfig.fromSpeakerOutput(player)
-  const speechConfig = await setupSpeechConfig()
+  const speechConfig = await setupTTSConfig()
   let synthesizer = new speechsdk.SpeechSynthesizer(speechConfig, audioConfig)
   // Events are raised as the output audio data becomes available, which is faster than playback to an output device.
   // We must must appropriately synchronize streaming and real-time.
@@ -1027,7 +797,7 @@ function ifUserAnswerIsBeingReadAloud(index: number) {
 }
 
 function configureAudioPlayer(index: number): AudioPlayer {
-  let audioPlayer = newAudioPlayer(index)
+  let audioPlayer = updateAudioPlayer(chatHistory.messages[index])
   audioPlayer.player.onAudioEnd = audioPlayer => {
     window.console.log('Audio track ended')
     audioPlayer.pause()
@@ -1047,7 +817,7 @@ function configureAudioPlayer(index: number): AudioPlayer {
       !chatHistory.messages[getLastEntryIndex()].audioPlayer.alreadyPlayed
     ) {
       // reverse order
-      let nextAudioPlayer = getAudioPlayer(getLastEntryIndex())
+      let nextAudioPlayer = getAudioPlayer(chatHistory.messages[getLastEntryIndex()])
       nextAudioPlayer.player.resume()
       nextAudioPlayer.muted = false
       chatHistory.messages[getLastEntryIndex()].audioPlayer.alreadyPlayed = true
@@ -1102,38 +872,6 @@ function configureReadAloudAudioPlayer(newlyAudioPlayer: AudioPlayer): AudioPlay
   return newlyAudioPlayer
 }
 
-function setResponse(response: string) {
-  response = response.replace(/\[.*?\]:\s*/, '')
-  chatHistory.messages[getLastEntryIndex()].message.content = response
-}
-
-async function focusPauseButton(index: number) {
-  if (index < 0) {
-    return
-  }
-  await nextTick()
-  // nextTick() to update DOM and show Overlay before focusing on the pause button
-  console.log('Focusing on the pause button on this index: ', index)
-  let playPauseButton = document.getElementById('playPauseButton' + index)
-  if (playPauseButton) {
-    playPauseButton.focus()
-  }
-}
-
-function removeHtmlTags(content: string) {
-  return content.replace(/<[^>]*>/g, '')
-}
-
-function pausePlayer(audioPlayer: AudioPlayer): void {
-  audioPlayer.player.pause()
-  audioPlayer.muted = true
-  console.log('Pausing player', audioPlayer)
-}
-
-function validAudioPlayer(audioPlayer: AudioPlayer): boolean {
-  return audioPlayer && audioPlayer.player && typeof audioPlayer.player.pause === 'function'
-}
-
 function muteAllAudioplayers(): void {
   chatHistory.messages.forEach((message: ChatMessage) => {
     if (message.audioPlayer && !message.audioPlayer.muted && validAudioPlayer(message.audioPlayer)) {
@@ -1147,27 +885,20 @@ function muteAllAudioplayers(): void {
   }
 }
 
-function resumePlayer(audioPlayer: AudioPlayer): void {
-  muteAllAudioplayers()
-  audioPlayer.player.resume()
-  audioPlayer.muted = false
-  audioPlayer.alreadyPlayed = true
-  // additional pause, as the onAudioEnd does not fire for resynthesized audioPlayers
-  pausePlayerAfterTimeout(audioPlayer)
-}
-
 function handlePause(entry: ChatMessage, index: number) {
   if (!entry.audioPlayer.muted) {
     pausePlayer(entry.audioPlayer)
     return
   }
   if (!entry.message.html) {
+    muteAllAudioplayers()
     resumePlayer(entry.audioPlayer)
     return
   }
   // Structured response handling
   if (entry.message.showHtml) {
     if (voiceResponse.value === entry.message.contentHtml) {
+      muteAllAudioplayers()
       resumePlayer(entry.audioPlayer)
     } else {
       voiceSynthesisStartOver.value = true
@@ -1177,6 +908,7 @@ function handlePause(entry: ChatMessage, index: number) {
     }
   } else {
     if (voiceResponse.value === entry.message.content) {
+      muteAllAudioplayers()
       resumePlayer(entry.audioPlayer)
     } else {
       voiceSynthesisStartOver.value = true
@@ -1194,6 +926,7 @@ function pause(entry: ChatMessage, index: number) {
       pausePlayer(readAloudAudioPlayer.value)
       return
     } else {
+      muteAllAudioplayers()
       resumePlayer(readAloudAudioPlayer.value)
       return
     }
@@ -1219,14 +952,6 @@ function pause(entry: ChatMessage, index: number) {
     resynthesizeAudioPlayerId.value = chatHistory.messages[index].audioPlayer.id
     addToVoiceResponse(entry.message.content)
   }
-}
-
-function generateReadableHTML(entry: ChatMessage): void {
-  let html = entry.message.html
-  if (html === undefined) {
-    return
-  }
-  entry.message.contentHtml = generateReadableTextFromHTML(html)
 }
 
 function showDrawer(bool: boolean) {
@@ -1274,57 +999,8 @@ function clearAllDocuments() {
   createNewDocument()
 }
 
-function downloadWord() {
-  const iframe = document.getElementsByTagName('iframe')[0]
-  const doc = iframe.contentDocument
-  // get the body of the doc
-  const body = doc.getElementsByTagName('body')[0]
-  // get the html of the body
-  const src = body.innerHTML
-  getWordDoc(src)
-}
-
-async function getWordDoc(src: string) {
-  await fetch('/api/pandoc', {
-    method: 'POST',
-    body: JSON.stringify({ html: src }),
-  })
-    .then(response => response.json())
-    .then(data => {
-      let base64Response = data.blob
-      let fetchResponse = fetch(base64Response)
-      fetchResponse
-        .then(res => res.blob())
-        .then(blob => {
-          // Now you have a Blob object, you can use it as you wish
-          console.log(blob)
-          // Create a new blob object
-          const newBlob = new Blob([blob], {
-            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          })
-
-          // Create a link element
-          const link = document.createElement('a')
-
-          // Create an object URL for the blob
-          const url = window.URL.createObjectURL(newBlob)
-
-          // Set the link's href to the object URL
-          link.href = url
-
-          // Set the download attribute of the link to the desired file name
-          link.download = 'Writing Assistant Document.docx'
-
-          // Append the link to the body
-          document.body.appendChild(link)
-
-          // Programmatically click the link to start the download
-          link.click()
-
-          // Once the download has started, remove the link from the body
-          document.body.removeChild(link)
-        })
-    })
+async function downloadDocument() {
+  await downloadDocumentAsWordBlob()
 }
 
 // fetch selected text from the text editor every second
@@ -1360,13 +1036,13 @@ if (process.client) {
     selectedTextIntermediate.value = selected_fragment.getHtml()
     let synonyms = thesaurus.default.find(selectedTextIntermediate.value.trim())
     if (synonyms.length === 0) {
-      registerActionsWithSynonyms(editor.value, submitSelectedCallback, ['None found'])
+      updateRegisteredActionsWithSynonyms(editor.value, submitSelectedCallback, ['None found'])
       return
     }
     if (synonyms.length > 5) {
       synonyms = synonyms.slice(0, 5)
     }
-    registerActionsWithSynonyms(editor.value, submitSelectedCallback, synonyms)
+    updateRegisteredActionsWithSynonyms(editor.value, submitSelectedCallback, synonyms)
   }
   setInterval(getSelectionText, 1000)
 }
@@ -1444,7 +1120,7 @@ function toggleChatHistoryExpanded() {
               @pause-read-aloud="pause"
               @toggle-read-only="toggleReadOnly"
               @clear-editor-content="clearEditorContent"
-              @download-word="downloadWord"
+              @download-word="downloadDocument"
             />
           </div>
         </v-col>

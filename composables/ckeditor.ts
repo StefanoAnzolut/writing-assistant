@@ -1,3 +1,47 @@
+export function toggleToolbar(): void {
+  let toolbar = window.document.getElementsByClassName('cke_top')
+  if (toolbar[0].getAttribute('style') === 'display: none') {
+    toolbar[0].setAttribute('style', 'display: block')
+  } else {
+    toolbar[0].setAttribute('style', 'display: none')
+  }
+}
+
+export function prepareCKEditor(
+  editor: any,
+  submitSelectedCallback: (event: Event, prompt: string, selectedTextFromEditor: string) => void
+): void {
+  editor.removeMenuItem('cut')
+  editor.removeMenuItem('copy')
+  editor.removeMenuItem('paste')
+  registerActions(editor, submitSelectedCallback)
+  removeFormElementRoles()
+}
+
+export function updateCKEditor(keyDownHandler: (event: KeyboardEvent) => void) {
+  let toolbar = document.getElementsByClassName('cke_top')
+  toolbar[0].setAttribute('style', 'display: none')
+
+  let bottomBar = document.getElementsByClassName('cke_bottom')
+  bottomBar[0].setAttribute('style', 'display: none')
+
+  let textAreaElements = document.getElementsByClassName('cke_contents cke_reset')
+  textAreaElements[0].setAttribute('style', 'height: 80vh !important;')
+
+  let textAreaForm = document.getElementsByTagName('TEXTAREA')
+  textAreaForm[0].remove()
+
+  const editorIframe = document.getElementsByTagName('iframe')[0]
+  if (editorIframe && editorIframe.contentWindow) {
+    editorIframe.contentWindow.document.addEventListener('keydown', keyDownHandler)
+  }
+}
+
+export function IsInlineModification(action: string): boolean {
+  const modifcationActions = ['summarize', 'checkSpelling', 'simplify', 'reformulate', 'concise']
+  return modifcationActions.includes(action)
+}
+
 export const actions = [
   {
     name: 'readAloud',
@@ -54,14 +98,14 @@ export const actions = [
     prompt: 'STORE',
   },
 ]
-//
 
-export function removeFormElementRoles() {
+function removeFormElementRoles() {
   nextTick()
   // Wait until the editor is loaded and remove form elements which overwhelm the screen reader user
   document.querySelectorAll('span > a').forEach(b => b.removeAttribute('role'))
   observeCKEditorPathAndRemoveDynamicFormElements()
 }
+
 function observeCKEditorPathAndRemoveDynamicFormElements() {
   // Select the node that will be observed for mutations
   const targetNode = document.getElementById('cke_1_path')
@@ -91,7 +135,7 @@ function observeCKEditorPathAndRemoveDynamicFormElements() {
   observer.observe(targetNode, config)
 }
 
-export function registerActions(
+function registerActions(
   editor: any,
   submitSelectedCallback: (event: Event, prompt: string, selected_text: string) => void
 ) {
@@ -123,87 +167,7 @@ export function registerActions(
   })
 }
 
-// const menuWithSubmenu = [
-//   {
-//     name: 'modify',
-//     label: 'Modify',
-//     items: [
-//       {
-//         name: 'summarize',
-//         label: 'Summarize',
-//         prompt:
-//           'Summarize the following content and make it such that the response can immediately be added to a text editor: ',
-//       },
-//       {
-//         name: 'checkSpelling',
-//         label: 'Check spelling',
-//         prompt:
-//           'Check spelling for the following content and make it such that the response can immediately be added to a text editor: ',
-//       },
-//       {
-//         name: 'reformulate',
-//         label: 'Reformulate',
-//         prompt:
-//           'Reformulate the following content and make it such that the response can immediately be added to a text editor: ',
-//       },
-//       {
-//         name: 'concise',
-//         label: 'Make concise',
-//         prompt:
-//           'Concise the following content and make it such that the response can immediately be added to a text editor: ',
-//       },
-//       {
-//         name: 'addStructure',
-//         label: 'Add structure',
-//         prompt:
-//           'Add structure to the following content and make it such that the response can immediately be added to a text editor: ',
-//       },
-//       {
-//         name: 'adaptToScientificStyle',
-//         label: 'Adapt to scientific style',
-//         prompt:
-//           'Adapt to scientific style the following content and make it such that the response can immediately be added to a text editor Selection start marker:',
-//       },
-//     ],
-//   },
-//   {
-//     name: 'ask',
-//     label: 'Ask',
-//     items: [
-//       {
-//         name: 'define',
-//         label: 'Define',
-//         prompt:
-//           'Define the following content and make it such that the response can immediately be added to a text editor: ',
-//       },
-//       {
-//         name: 'findSynonyms',
-//         label: 'Find synonyms',
-//         prompt:
-//           'Find synonyms for the following content and make it such that the response can immediately be added to a text editor: ',
-//       },
-//       {
-//         name: 'giveWritingAdvice',
-//         label: 'Give writing advice',
-//         prompt:
-//           'Give writing advice for the following content and make it such that the response can immediately be added to a text editor: ',
-//       },
-//       {
-//         name: 'describeFormatting',
-//         label: 'Describe formatting',
-//         prompt:
-//           'Focus only on the formatting of the following content and accurately return the description of the formatting structure only, do not add unseen formatting, do not return your answer as a list. Selection start marker:',
-//       },
-//       {
-//         name: 'askQuestion',
-//         label: 'Your custom question',
-//         prompt: 'STORE',
-//       },
-//     ],
-//   },
-// ]
-
-export function registerActionsWithSynonyms(
+export function updateRegisteredActionsWithSynonyms(
   editor: any,
   submitSelectedCallback: (event: Event, prompt: string, selected_text: string) => void,
   synonyms: string[] = []
