@@ -115,6 +115,12 @@ function removeExtraComponents(sleepTimer: number = 350) {
 
 function keyDownHandler(event: KeyboardEvent) {
   if (event.code === 'Escape') {
+    if (chatHistoryExpanded.value && !drawer.value) {
+      toggleChatHistoryExpanded()
+      // focusing on the chat history expansion panel button
+      ;(document.getElementsByClassName('v-expansion-panel-title bg-primary')[0] as HTMLElement)?.focus()
+    }
+
     showDrawer(false)
   }
   if (event.key === 'F8') {
@@ -644,8 +650,37 @@ function handleModificationRequest(content: string) {
   // focusOnPastedContent(textReplacementInContext)
 }
 
+function focusOnEditor(replacementText: string) {
+  // TODO: Can we focus the element that was added/replaced?
+  // find the replacement text in the editor
+  // await nextTick()
+  const iframe = document.getElementsByTagName('iframe')[0]
+  // if (iframe) {
+  //   const iframeDocument = iframe.contentDocument || iframe.contentWindow?.document
+  //   const iframeBody = iframeDocument?.getElementsByClassName('cke_editable')[0]
+  //   if (iframeBody) {
+  //     iframeBody.childNodes.forEach(element => {
+  //       if (element.textContent?.includes(replacementText) && element instanceof HTMLElement) {
+  //         element.focus()
+  //       }
+  //     })
+  //   }
+  // }
+
+  if (iframe) {
+    const iframeDocument = iframe.contentDocument || iframe.contentWindow?.document
+    const editor = iframeDocument?.getElementsByClassName('cke_editable')[0]
+    if (editor) {
+      editor.focus()
+    }
+  }
+}
+
 function paste(index: number) {
-  const matchPrefix = chatHistory.messages[index].message.content.match(/Answer (\d+)\n([\s\S]*)/)
+  const message = chatHistory.messages[index].message
+  message.alreadyPasted = true
+
+  const matchPrefix = message.content.match(/Answer (\d+)\n([\s\S]*)/)
   if (!matchPrefix) {
     return
   }
@@ -654,9 +689,9 @@ function paste(index: number) {
     synthesizeSpeech('Cannot paste, as no corrections were needed.', directResponseIndex)
     return
   }
-  const isHtml = isHtmlAlreadyExtracted(replacementText) || chatHistory.messages[index].message.html
+  const isHtml = isHtmlAlreadyExtracted(replacementText) || message.html
   if (isHtml) {
-    replacementText = preprocessHtml(chatHistory.messages[index].message.html)
+    replacementText = preprocessHtml(message.html)
     console.log(replacementText)
   }
   if (IsInlineModification(lastContextMenuAction.value) && selectedText.value !== '') {
@@ -667,9 +702,11 @@ function paste(index: number) {
     // console.log('includes:', editorContent.value.trim().includes(replacementText.trim()))
     if (editorContent.value.trim().includes(replacementText.trim())) {
       synthesizeSpeech('Modified the selected content directly.', directResponseIndex)
+      focusOnEditor(replacementText)
     } else {
       synthesizeSpeech('Pasting content to end of text editor', directResponseIndex)
       editorContent.value += replacementText
+      focusOnEditor(replacementText)
       // focusOnEndOfEditor()
       // scrollToBottomTextEditor()
     }
@@ -679,6 +716,7 @@ function paste(index: number) {
   if (isHtml) {
     synthesizeSpeech('Pasted structured to the text editor.', directResponseIndex)
     editorContent.value += replacementText
+    focusOnEditor(replacementText)
     // focusOnEndOfEditor()
     return
   }
@@ -691,11 +729,13 @@ function paste(index: number) {
   if (replacementText.toLowerCase().includes('html')) {
     // Special case where html is not identified correctly
     editorContent.value += replacementText
+    focusOnEditor(replacementText)
     // focusOnEndOfEditor()
     // scrollToBottomTextEditor()
     return
   }
   insertParagraphWise(replacementText.split('\n'))
+  focusOnEditor(replacementText.split('\n')[replacementText.split('\n').length - 1])
   // scrollToBottomTextEditor()
 }
 
@@ -1047,64 +1087,66 @@ function toggleChatHistoryExpanded() {
         @clear-document="clearDocument"
       />
     </v-navigation-drawer>
-    <v-container>
-      <v-row :justify="drawer !== true ? 'start' : 'end'">
-        <sidebar-buttons :drawer="drawer" @close-drawer="showDrawer" />
-        <v-col cols="4">
-          <div class="card">
-            <!-- <v-select
+    <main>
+      <v-container>
+        <v-row :justify="drawer !== true ? 'start' : 'end'">
+          <sidebar-buttons :drawer="drawer" @close-drawer="showDrawer" />
+          <v-col cols="4">
+            <div class="card" role="region" aria-labelledby="chat-title">
+              <!-- <v-select
             label="Select a speaker"
             density="compact"
             :items="['Jenny', 'Andrew', 'Sonia', 'Ryan']"
             v-model="selectedSpeaker"
             aria-label="Select a speaker"
           ></v-select> -->
-            <h1 class="card-title">Chat</h1>
-            <div class="card-text">
-              <div class="chat">
-                <form @submit="submit" class="d-flex input pb-2">
-                  <chat-input v-model="input" @sttFromMic="sttFromMic" :inputDisabled="inputDisabled" />
-                </form>
-                <chat-messages
-                  :messages="chatHistory.messages"
-                  :chatHistoryExpanded="chatHistoryExpanded"
-                  @paste="paste"
-                  @pause="pause"
-                  @toggle-chat-history="toggleChatHistoryExpanded"
-                />
+              <h1 id="chat-title" class="card-title">Chat</h1>
+              <div class="card-text">
+                <div class="chat">
+                  <form @submit="submit" class="d-flex input pb-2">
+                    <chat-input v-model="input" @sttFromMic="sttFromMic" :inputDisabled="inputDisabled" />
+                  </form>
+                  <chat-messages
+                    :messages="chatHistory.messages"
+                    :chatHistoryExpanded="chatHistoryExpanded"
+                    @paste="paste"
+                    @pause="pause"
+                    @toggle-chat-history="toggleChatHistoryExpanded"
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        </v-col>
-        <v-col :cols="drawer !== true ? 8 : 7">
-          <div class="card">
-            <h1 class="card-title">Editor</h1>
-            <div class="card-text">
-              <client-only>
-                <div>
-                  <ckeditor
-                    id="text-editor"
-                    :editor-url="editorUrl"
-                    v-model="editorContent"
-                    @namespaceloaded="onNamespaceLoaded"
-                  ></ckeditor>
-                </div>
-              </client-only>
+          </v-col>
+          <v-col :cols="drawer !== true ? 8 : 7">
+            <div class="card" role="region" aria-labelledby="editor-title">
+              <h1 id="editor-title" class="card-title">Editor</h1>
+              <div class="card-text">
+                <client-only>
+                  <div>
+                    <ckeditor
+                      id="text-editor"
+                      :editor-url="editorUrl"
+                      v-model="editorContent"
+                      @namespaceloaded="onNamespaceLoaded"
+                    ></ckeditor>
+                  </div>
+                </client-only>
+              </div>
+              <editor-controls
+                :show-read-aloud="showReadAloudAudioPlayer.show"
+                :audio-player="readAloudAudioPlayer"
+                :read-only="readOnly"
+                :read-aloud-player-index="readAloudPlayerIndex"
+                @pause-read-aloud="pause"
+                @toggle-read-only="toggleReadOnly"
+                @clear-editor-content="clearEditorContent"
+                @download-word="downloadDocument"
+              />
             </div>
-            <editor-controls
-              :show-read-aloud="showReadAloudAudioPlayer.show"
-              :audio-player="readAloudAudioPlayer"
-              :read-only="readOnly"
-              :read-aloud-player-index="readAloudPlayerIndex"
-              @pause-read-aloud="pause"
-              @toggle-read-only="toggleReadOnly"
-              @clear-editor-content="clearEditorContent"
-              @download-word="downloadDocument"
-            />
-          </div>
-        </v-col>
-      </v-row>
-    </v-container>
+          </v-col>
+        </v-row>
+      </v-container>
+    </main>
   </v-app>
 </template>
 

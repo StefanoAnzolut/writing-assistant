@@ -67,6 +67,7 @@ function withoutPrefix(str: string) {
   <v-container v-if="props.messages.length > 2" class="d-flex flex-row justify-center">
     <v-expansion-panels>
       <v-expansion-panel
+        id="chat-history-expansion-panel"
         class="ma-1 no-uppercase"
         color="primary"
         @click="$emit('toggleChatHistory')"
@@ -83,7 +84,7 @@ function withoutPrefix(str: string) {
     class="chat-message ma-2 mx-4"
     :class="item.entry.message.role === 'user' ? 'user-message' : 'assistant-message'"
   >
-    <div class="chat-inner">
+    <article class="chat-inner">
       <h2 class="aria-invisible" v-if="item.entry.message.role === 'user'">
         {{ removeHtmlTags(item.entry.message.content.substring(0, 50)) }}
       </h2>
@@ -100,7 +101,7 @@ function withoutPrefix(str: string) {
         </span>
       </h3>
       <div class="regular-font-weight" v-if="showHtml(item.entry)" v-html="item.entry.message.html" />
-    </div>
+    </article>
     <v-container class="d-flex flex-row justify-end">
       <v-btn
         :id="'playPauseButton' + item.index"
@@ -140,6 +141,7 @@ function withoutPrefix(str: string) {
         @click="$emit('paste', item.index)"
         :aria-label="`Add ${extractPrefix(item.entry.message.content)} to text editor`"
         size="small"
+        :disabled="item.entry.message.alreadyPasted"
         v-if="item.entry.message.role === 'assistant'"
       >
       </v-btn>

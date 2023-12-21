@@ -8,4 +8,5 @@ export interface Message {
   html?: string
   contentHtml?: string
   showHtml?: boolean
+  alreadyPasted?: boolean
 }
