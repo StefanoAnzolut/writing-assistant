@@ -417,19 +417,20 @@ function generateTakesAWhileAnswer(chatMessage: ChatMessage) {
   chatMessage.message.content = removeHtmlTags(chatMessage.message.content)
   synthesizeSpeech(chatMessage.message.content, getLastEntryIndex())
   setTimeout(() => {
-    if (isLastMessageUser()) {
+    if (isLastMessageUser() && sameContentAsLastMessage(chatMessage)) {
       let newMessage: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: '',
-      }
-      if (!messages.value[messages.value.length - 1].content.includes('<ai-response>')) {
-        newMessage.content = PROMPT_TAKES_A_WHILE
+        content: PROMPT_TAKES_A_WHILE,
       }
       addToChatHistory(newMessage)
       synthesizeSpeech(newMessage.content, getLastEntryIndex())
     }
   }, 7000)
+}
+
+function sameContentAsLastMessage(chatMessage: ChatMessage): boolean {
+  return chatMessage.message.content === messages.value[messages.value.length - 1].content
 }
 
 function synthesizeIntermediateAnswer(chatMessage: ChatMessage): boolean {
@@ -1073,10 +1074,6 @@ function toggleChatHistoryExpanded() {
                 />
               </div>
             </div>
-            <chat-controls
-              :chatHistoryExpanded="chatHistoryExpanded"
-              @toggle-chat-history="toggleChatHistoryExpanded"
-            />
           </div>
         </v-col>
         <v-col :cols="drawer !== true ? 8 : 7">
