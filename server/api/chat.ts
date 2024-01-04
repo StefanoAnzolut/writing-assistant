@@ -101,13 +101,13 @@ async function checkStructureRequest(message: Message) {
   ]
   let systemPrompt = `You are an agent that preprocesses messages and identifies whether the request is asking for support of academic writing.
     This includes any help with the following: ${keywords.join(', ')}
-    If the USER REQUEST asks for for any of them, you reply with true otherwise
-    reply with false and the reason why it is not an aid request in three sentences at most.\n
+    If the USER REQUEST asks for for any of them, you reply with true and a one sentence reason otherwise
+    reply with false and and a reason why it is not an aid request in three sentences at most.\n
     Here are a few examples for reference:
     - Provide me a structure for a paper
     - Write me a template for a conference
     - How does a scientific work for a qualitative study look like?
-    If the question is similar or shares a similar intention to the references also reply with true.
+    If the question is similar or shares a similar intention to the references also reply with true and a one sentence reason.
     `
   // structure, template, an example, formatting of the paper or draft. If the USER REQUEST asks for any kind of structure, template, an example, draft, formatting of the paper or outline of a scientific work document you reply with true otherwise reply with false and the reason why it is not a request for structure in three sentences at most.\n`
   let messages = [

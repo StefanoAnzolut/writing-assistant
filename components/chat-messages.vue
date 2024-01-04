@@ -62,12 +62,15 @@ function extractPrefix(str: string) {
 function withoutPrefix(str: string) {
   return str.substring(str.indexOf('\n'))
 }
+
+function firstChunkOnly(str: string) {
+  return str.substring(0, 50)
+}
 </script>
 <template>
   <v-container v-if="props.messages.length > 2" class="d-flex flex-row justify-center">
     <v-expansion-panels>
       <v-expansion-panel
-        id="chat-history-expansion-panel"
         class="ma-1 no-uppercase"
         color="primary"
         @click="$emit('toggleChatHistory')"
@@ -81,25 +84,44 @@ function withoutPrefix(str: string) {
     v-for="item in chatMessagesExtended"
     :index="item.index"
     key="m.id"
-    class="chat-message ma-2 mx-4"
-    :class="item.entry.message.role === 'user' ? 'user-message' : 'assistant-message'"
+    class="chat-message ma-2"
+    :class="item.entry.message.role === 'user' ? 'user-prompt' : 'assistant-answer'"
   >
-    <article class="chat-inner">
+    <article class="chat-inner" :aria-label="`${removeHtmlTags(firstChunkOnly(item.entry.message.content))}`">
       <h2 class="aria-invisible" v-if="item.entry.message.role === 'user'">
-        {{ removeHtmlTags(item.entry.message.content.substring(0, 50)) }}
+        {{ removeHtmlTags(firstChunkOnly(item.entry.message.content)) }}
       </h2>
-      <p class="h3-style" v-if="item.entry.message.role === 'user'">
+      <v-container class="d-flex flex-row justify-end pt-1 pl-0 pr-3" v-if="item.entry.message.role === 'assistant'">
+        <h3 class="message-title" v-if="item.entry.message.role === 'assistant'">
+          <v-icon icon="mdi-robot" class="pb-1 pr-1" alt=""></v-icon>
+          {{ removeHtmlTags(extractPrefix(item.entry.message.content)) }}
+        </h3>
+        <v-btn
+          v-if="
+            item.entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) && item.entry.message.role === 'assistant'
+          "
+          :id="showHtml(item.entry) ? 'collapseButton' + item.index : 'expandButton' + item.index"
+          :icon="showHtml(item.entry) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+          color="primary"
+          :aria-label="
+            showHtml(item.entry)
+              ? `Collapse structure for ${extractPrefix(item.entry.message.content)}`
+              : `Expand structure for ${extractPrefix(item.entry.message.content)}`
+          "
+          @click="showHtml(item.entry) ? collapse(item.index) : expand(item.index)"
+          size="small"
+        ></v-btn>
+      </v-container>
+      <p class="h3-style pt-1 pb-4" v-if="item.entry.message.role === 'user'">
+        <v-icon icon="mdi-account" alt=""></v-icon>
         {{ removeHtmlTags(extractPrefix(item.entry.message.content)) }}
-        <span class="regular-font-weight">
-          {{ removeHtmlTags(withoutPrefix(item.entry.message.content)) }}
-        </span>
       </p>
-      <h3 v-if="item.entry.message.role === 'assistant'">
-        {{ removeHtmlTags(extractPrefix(item.entry.message.content)) }}
-        <span class="regular-font-weight" v-if="!showHtml(item.entry)">
-          {{ removeHtmlTags(withoutPrefix(item.entry.message.content)) }}
-        </span>
-      </h3>
+      <p class="regular-font-weight" v-if="item.entry.message.role === 'user'">
+        {{ removeHtmlTags(withoutPrefix(item.entry.message.content)) }}
+      </p>
+      <p class="regular-font-weight" v-if="item.entry.message.role === 'assistant' && !showHtml(item.entry)">
+        {{ removeHtmlTags(withoutPrefix(item.entry.message.content)) }}
+      </p>
       <div class="regular-font-weight" v-if="showHtml(item.entry)" v-html="item.entry.message.html" />
     </article>
     <v-container class="d-flex flex-row justify-end">
@@ -117,22 +139,6 @@ function withoutPrefix(str: string) {
         size="small"
       >
       </v-btn>
-      <v-btn
-        v-if="
-          item.entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) && item.entry.message.role === 'assistant'
-        "
-        :id="showHtml(item.entry) ? 'collapseButton' + item.index : 'expandButton' + item.index"
-        :icon="showHtml(item.entry) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-        class="ma-1"
-        color="primary"
-        :aria-label="
-          showHtml(item.entry)
-            ? `Collapse structure for ${extractPrefix(item.entry.message.content)}`
-            : `Expand structure for ${extractPrefix(item.entry.message.content)}`
-        "
-        @click="showHtml(item.entry) ? collapse(item.index) : expand(item.index)"
-        size="small"
-      ></v-btn>
       <v-btn
         :id="'addToChatEditor' + item.index"
         icon="mdi-content-paste"
@@ -173,11 +179,17 @@ https://stackoverflow.com/questions/62107074/how-to-hide-a-text-and-make-it-acce
   padding: 0.5rem;
 }
 
-.user-message {
+.user-prompt {
   background-color: #c5cae9;
+  border: 4px solid #b1b5d1;
 }
-.assistant-message {
+.message-title {
+  margin: auto;
+  margin-left: 0px;
+}
+.assistant-answer {
   background-color: #e8eaf6;
+  border: 4px solid #d0d2dd;
 }
 .regular-font-weight {
   font-weight: normal;

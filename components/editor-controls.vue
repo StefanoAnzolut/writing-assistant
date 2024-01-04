@@ -38,28 +38,18 @@ const { mdAndUp } = useDisplay()
     <v-btn
       :class="mdAndUp === true ? 'v-btn--size-default' : ''"
       class="ma-1 no-uppercase"
+      :size="mdAndUp === true ? 'null' : 'small'"
+      color="primary"
+      @click="$emit('toggleReadOnly', props.readOnly)"
+      >{{ props.readOnly ? 'Deactivate read only' : 'Activate read only' }}</v-btn
+    >
+    <v-btn
+      :class="mdAndUp === true ? 'v-btn--size-default' : ''"
+      class="ma-1 no-uppercase"
       color="primary"
       @click="$emit('downloadWord')"
       :size="mdAndUp === true ? 'null' : 'small'"
       >Download document</v-btn
-    >
-    <v-btn
-      v-if="props.readOnly === true"
-      :class="mdAndUp === true ? 'v-btn--size-default' : ''"
-      class="ma-1 no-uppercase"
-      color="primary"
-      @click="$emit('toggleReadOnly', readOnly)"
-      :size="mdAndUp === true ? 'null' : 'small'"
-      >Deactivate read only</v-btn
-    >
-    <v-btn
-      v-else
-      :class="mdAndUp === true ? 'v-btn--size-default' : ''"
-      class="ma-1 no-uppercase"
-      :size="mdAndUp === true ? 'null' : 'small'"
-      color="primary"
-      @click="$emit('toggleReadOnly', readOnly)"
-      >Activate read only</v-btn
     >
     <v-btn
       :class="mdAndUp === true ? 'v-btn--size-default' : ''"

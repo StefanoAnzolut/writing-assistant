@@ -4,4 +4,5 @@ export interface Session {
   id: string
   chatHistory: ChatHistory
   editorContent: string
+  structure: boolean
 }

@@ -48,6 +48,8 @@ const chatHistoryExpanded = ref(false)
 
 /** Shared editor content between the user and the writing partner */
 const editorContent = ref('')
+const structuredContentPasted = ref(false)
+
 /** A temporary store for the selected text from the text editor for custom questions and easier replacement */
 const selectedText = ref('')
 const selectedTextIntermediate = ref('')
@@ -104,23 +106,43 @@ function onNamespaceLoaded() {
   })
 
   // Element is not yet available, so we need to wait a bit (150 ms should be enough but not for Firefox)
-  window.navigator.userAgent.includes('Firefox') ? removeExtraComponents(700) : removeExtraComponents(350)
+  window.navigator.userAgent.includes('Firefox') ? removeExtraComponents(1000) : removeExtraComponents(500)
 }
 
 function removeExtraComponents(sleepTimer: number = 350) {
   setTimeout(() => {
     updateCKEditor(keyDownHandler)
+    setTimeout(() => {
+      // fallback if the visuals are not yet loaded but the namespace is
+      let toolbar = document.getElementsByClassName('cke_top')
+      if (toolbar.length === 0) {
+        updateCKEditor(keyDownHandler)
+      }
+    }, 5000)
   }, sleepTimer)
 }
 
 function keyDownHandler(event: KeyboardEvent) {
   if (event.code === 'Escape') {
-    if (chatHistoryExpanded.value && !drawer.value) {
-      toggleChatHistoryExpanded()
+    // Check in the chat history for entries that have an expanded html response
+    // and collapse them
+    let collapsedChatMessage = false
+    chatHistory.messages.forEach((message: ChatMessage, index: number) => {
+      if (message.message.showHtml && message.message.content.includes(HTML_EXTRACTION_PLACEHOLDER)) {
+        message.message.showHtml = false
+        const chatMessageExpansionPanel = document.getElementById('collapseButton' + index)
+        chatMessageExpansionPanel?.focus()
+        collapsedChatMessage = true
+      }
+    })
+    if (!collapsedChatMessage && chatHistoryExpanded.value && !drawer.value) {
       // focusing on the chat history expansion panel button
-      ;(document.getElementsByClassName('v-expansion-panel-title bg-primary')[0] as HTMLElement)?.focus()
+      const chatHistoryExpansionPanel = document.getElementsByClassName(
+        'v-expansion-panel-title bg-primary'
+      )[0] as HTMLElement
+      chatHistoryExpansionPanel.click()
+      chatHistoryExpansionPanel.focus()
     }
-
     showDrawer(false)
   }
   if (event.key === 'F8') {
@@ -130,30 +152,40 @@ function keyDownHandler(event: KeyboardEvent) {
 
 function clearEditorContent() {
   editorContent.value = ''
+  toggleReadOnly(true)
 }
 
 function toggleReadOnly(isReadOnly: boolean) {
   if (isReadOnly) {
     readOnly.value = false
-    editor.value.setReadOnly(readOnly.value)
+    const iframe = document.getElementsByTagName('iframe')[0]
+    if (iframe) {
+      const iframeDocument = iframe.contentDocument || iframe.contentWindow?.document
+      iframeDocument.getElementsByClassName('cke_editable')[0].contentEditable = 'true'
+    }
   } else {
     readOnly.value = true
-    editor.value.setReadOnly(readOnly.value)
+    const iframe = document.getElementsByTagName('iframe')[0]
+    if (iframe) {
+      const iframeDocument = iframe.contentDocument || iframe.contentWindow?.document
+      iframeDocument.getElementsByClassName('cke_editable')[0].contentEditable = 'false'
+    }
   }
-  // Change the read-only state of the editor.
-  // https://ckeditor.com/docs/ckeditor4/latest/api/CKEDITOR_editor.html#method-setReadOnly
 }
 
 function getActiveSession(): Session {
   if (sessions.value.length === 0) {
+    console.log('No session found, creating a new one')
     activeSession.value = {
       id: Date.now().toString(),
       chatHistory: { messages: [] as ChatMessage[] },
       editorContent: '',
+      structure: false,
     }
     return activeSession.value
   }
   if (activeSession.value.id === '') {
+    console.log('No session found for the given id, fetching the last session')
     activeSession.value = sessions.value[sessions.value.length - 1]
     return activeSession.value
   }
@@ -161,7 +193,9 @@ function getActiveSession(): Session {
     id: activeSession.value.id,
     chatHistory: { messages: chatHistory.messages },
     editorContent: editorContent.value,
+    structure: structuredContentPasted.value,
   }
+  console.log('Returning the current session as the active session', activeSession.value)
   return activeSession.value
 }
 
@@ -174,6 +208,7 @@ function setActiveSession(id: string): void {
   chatHistory.messages = activeSession.value.chatHistory.messages
   setMessages(chatHistory.messages.map(message => message.message))
   editorContent.value = activeSession.value.editorContent
+  structuredContentPasted.value = activeSession.value.structure
   sessionLoading.value = true
   showDrawer(false)
 }
@@ -183,6 +218,7 @@ function getSession(id: string): Session {
   if (session) {
     chatHistory.messages = session.chatHistory.messages
     editorContent.value = session.editorContent
+    structuredContentPasted.value = session.structure
     return session
   }
   throw new Error('Session not found')
@@ -290,6 +326,40 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
   }, 1000)
 }
 
+function changeHeadingLevel(prompt: string, context: string) {
+  let headingLevel = 0
+  if (prompt.includes('HEADING')) {
+    headingLevel = parseInt(prompt[prompt.length - 1])
+  }
+  // if there are multiple html elements in the context we need to change the heading level of all of them
+  if (selectedTextProperties.value.context.includes('<')) {
+    const parser = new DOMParser()
+    const htmlDoc = parser.parseFromString(context, 'text/html')
+    const htmlElements = Array.from(htmlDoc.body.getElementsByTagName('*'))
+    for (const oldElement of htmlElements) {
+      let newElement = htmlDoc.createElement('p')
+      if (prompt.includes('HEADING')) {
+        newElement = htmlDoc.createElement(`h${headingLevel}`)
+      }
+      // Copy attributes
+      for (const attr of oldElement.attributes) {
+        newElement.setAttribute(attr.name, attr.value)
+      }
+
+      // Copy children
+      while (oldElement.firstChild) {
+        newElement.appendChild(oldElement.firstChild)
+      }
+
+      // Replace old element with new one
+      oldElement.parentNode.replaceChild(newElement, oldElement)
+    }
+    const resultingHTML = htmlDoc.body.innerHTML
+    console.log(resultingHTML)
+    handleModificationRequest(resultingHTML)
+  }
+}
+
 function needsAnswer(prompt: string, selectedTextFromEditor: string): boolean {
   if (prompt === 'STORE') {
     // selectedText.value = selectedTextFromEditor
@@ -298,6 +368,10 @@ function needsAnswer(prompt: string, selectedTextFromEditor: string): boolean {
       chatInput.focus()
     }
     synthesizeSpeech('Stored the selected text, continue with asking your question!', directResponseIndex)
+    return false
+  }
+  if (prompt.includes('HEADING') || prompt.includes('NORMAL')) {
+    changeHeadingLevel(prompt, selectedTextProperties.value.context)
     return false
   }
   if (selectedTextFromEditor === '') {
@@ -423,7 +497,12 @@ function generateTakesAWhileAnswer(chatMessage: ChatMessage) {
   chatMessage.message.content = removeHtmlTags(chatMessage.message.content)
   synthesizeSpeech(chatMessage.message.content, getLastEntryIndex())
   setTimeout(() => {
-    if (isLastMessageUser() && sameContentAsLastMessage(chatMessage)) {
+    if (
+      responseFinished.value === false &&
+      voiceResponse.value !== chatHistory.messages[getLastEntryIndex()].message.content &&
+      !voiceSynthesisStartOver.value &&
+      chatHistory.messages[getLastEntryIndex()].message.role === 'user'
+    ) {
       let newMessage: Message = {
         id: Date.now().toString(),
         role: 'assistant',
@@ -476,6 +555,7 @@ watch(responseFinished, (_): void => {
       id: activeSession.value.id,
       chatHistory: chatHistory,
       editorContent: editorContent.value,
+      structure: structuredContentPasted.value,
     }
     storeSession(activeSession.value)
     // final run to finish the voice synthesis
@@ -497,6 +577,9 @@ watch(responseFinished, (_): void => {
     // if the user prompt is still being played do not focus on the pause button of the assistant response
     // reverse order
     if (chatHistory.messages[getLastEntryIndex() - 1].audioPlayer.muted === false) {
+      // Play a signal tone that an answer is ready to be played
+      console.log('Playing a signal tone')
+      new Tone.Synth().toDestination().triggerAttackRelease('C4', '8n')
       return
     }
     focusPauseButton(getLastAssistantResponseIndex())
@@ -714,10 +797,21 @@ function paste(index: number) {
   }
 
   if (isHtml) {
-    synthesizeSpeech('Pasted structured to the text editor.', directResponseIndex)
-    editorContent.value += replacementText
-    focusOnEditor(replacementText)
-    // focusOnEndOfEditor()
+    if (!structuredContentPasted.value && !IsInlineModification(lastContextMenuAction.value)) {
+      synthesizeSpeech('Pasted structured to the text editor.', directResponseIndex)
+      editorContent.value += replacementText
+      focusOnEditor(replacementText)
+      structuredContentPasted.value = true
+      // focusOnEndOfEditor()
+      return
+    }
+    synthesizeSpeech(
+      'A structured document already exists, creating a new document. Use the sidebar on the left to navigate between documents.',
+      directResponseIndex
+    )
+    // create a new session with the same chat history but with the editor content being the replacement text
+    createNewStructuredDocument({ messages: chatHistory.messages }, replacementText)
+
     return
   }
   if (editorContent.value === '') {
@@ -826,7 +920,9 @@ function ifUserAnswerIsBeingReadAloud(index: number) {
 
 function configureAudioPlayer(index: number): AudioPlayer {
   let chatMessage = chatHistory.messages[index]
+  console.log('index', index)
   let audioPlayer = updateAudioPlayer(chatHistory.messages[index])
+  console.log(audioPlayer)
   audioPlayer.player.onAudioEnd = audioPlayer => {
     audioPlayer.pause()
     // reverse order
@@ -840,6 +936,7 @@ function configureAudioPlayer(index: number): AudioPlayer {
   }
 
   audioPlayer.player.onAudioStart = () => {
+    window.console.log('OnAudioStart')
     if (chatMessage.message.role === 'user') {
       focusPauseButton(index)
     }
@@ -984,6 +1081,7 @@ function showDrawer(bool: boolean) {
 function clearDocumentVars() {
   chatHistory.messages = []
   messages.value = []
+  structuredContentPasted.value = false
   messageInteractionCounter.value = 0
   input.value = ''
   editorContent.value = ''
@@ -996,6 +1094,7 @@ function clearDocument() {
     id: activeSession.value.id,
     chatHistory: { messages: [] as ChatMessage[] },
     editorContent: '',
+    structure: false,
   }
   storeSession(activeSession.value)
   showDrawer(false)
@@ -1004,15 +1103,29 @@ function clearDocument() {
 
 function createNewDocument() {
   muteAllAudioplayers()
-  const newSession = {
+  clearDocumentVars()
+  activeSession.value = {
     id: Date.now().toString(),
     chatHistory: { messages: [] as ChatMessage[] },
     editorContent: '',
+    structure: false,
   }
-  activeSession.value = newSession
-  sessions.value.push(newSession)
+  sessions.value.push(activeSession.value)
   localStorage.setItem('sessions', JSON.stringify(sessions.value))
-  clearDocumentVars()
+  showDrawer(false)
+}
+
+function createNewStructuredDocument(history = { messages: [] as ChatMessage[] }, editorText: string) {
+  muteAllAudioplayers()
+  const newSession = {
+    id: Date.now().toString(),
+    chatHistory: history,
+    editorContent: editorText,
+    structure: activeSession.value.structure,
+  }
+  sessions.value.push(newSession)
+  setActiveSession(newSession.id)
+  localStorage.setItem('sessions', JSON.stringify(sessions.value))
   showDrawer(false)
 }
 
@@ -1023,6 +1136,10 @@ function clearAllDocuments() {
 }
 
 async function downloadDocument() {
+  // TODO: Some formatting that it looks okay visually
+  // First idea, remove unnecessary white space "<p><br></p>"
+  editorContent.value = editorContent.value.replace(/(<(p|h[1-6])>&nbsp;<\/(p|h[1-6])>\s*)+/g, '')
+  await nextTick()
   await downloadDocumentAsWordBlob()
 }
 

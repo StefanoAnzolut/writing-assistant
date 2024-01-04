@@ -48,7 +48,7 @@ defineEmits(['closeDrawer'])
   --transform-rotate: 0;
 }
 .sidebar-button-right {
-  margin-left: 4px;
+  margin-left: 8px;
   background-color: #1867c0;
 }
 .sidebar-button-left {
