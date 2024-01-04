@@ -579,7 +579,10 @@ watch(responseFinished, (_): void => {
     if (chatHistory.messages[getLastEntryIndex() - 1].audioPlayer.muted === false) {
       // Play a signal tone that an answer is ready to be played
       console.log('Playing a signal tone')
-      new Tone.Synth().toDestination().triggerAttackRelease('C4', '8n')
+      const now = Tone.now()
+      new Tone.Synth().toDestination().triggerAttackRelease('C4', '8n', now)
+      new Tone.Synth().toDestination().triggerAttackRelease('E4', '8n', now + 0.2)
+      new Tone.Synth().toDestination().triggerAttackRelease('G4', '8n', now + 0.4)
       return
     }
     focusPauseButton(getLastAssistantResponseIndex())

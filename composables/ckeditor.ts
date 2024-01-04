@@ -5,6 +5,13 @@ export function toggleToolbar(): void {
   } else {
     toolbar[0].setAttribute('style', 'display: none')
   }
+
+  let bottomBar = document.getElementsByClassName('cke_bottom')
+  if (bottomBar[0].getAttribute('style') === 'display: none') {
+    bottomBar[0].setAttribute('style', 'display: block')
+  } else {
+    bottomBar[0].setAttribute('style', 'display: none')
+  }
 }
 
 export function prepareCKEditor(
@@ -42,6 +49,7 @@ export function IsInlineModification(action: string): boolean {
   return modifcationActions.includes(action)
 }
 
+// do not use the same name for actions as defined by CKEditor, these must be unqiue. Otherwise, built-in actions will be overwritten
 export const actions = [
   {
     name: 'readAloud',
@@ -91,6 +99,38 @@ export const actions = [
     name: 'findSynonyms',
     label: 'Find synonyms',
     prompt: 'SYNONYMS',
+  },
+  {
+    name: 'createHeading',
+    label: 'Change heading',
+    prompt: 'HEADING',
+    items: [
+      {
+        name: 'setH1',
+        label: 'Heading 1 - Document title',
+        prompt: 'HEADING1',
+      },
+      {
+        name: 'setH2',
+        label: 'Heading 2 - Section title',
+        prompt: 'HEADING2',
+      },
+      {
+        name: 'setH3',
+        label: 'Heading 3 - Subsection title',
+        prompt: 'HEADING3',
+      },
+      {
+        name: 'setH4',
+        label: 'Heading 4 - Subsection title',
+        prompt: 'HEADING4',
+      },
+      {
+        name: 'normal',
+        label: 'Normal',
+        prompt: 'NORMAL',
+      },
+    ],
   },
   {
     name: 'askQuestion',
@@ -147,11 +187,6 @@ function registerActions(
         const range = editor.getSelection().getRanges()[0]
         const selected_fragment = range.cloneContents()
         const selected_text = selected_fragment.getHtml()
-        // TODO: Check whether cursor position is relevant if so, maybe we can pass fragment etc.
-        // let editorVar = CKEDITOR.instances.editor1
-        // console.log(editorVar)
-        // let editorData = editorVar.getData()
-        // console.log('editorData', editorData)
         submitSelectedCallback(new Event('submit'), action.prompt, selected_text)
       },
     })
@@ -161,6 +196,41 @@ function registerActions(
       group: 'aiSuggestions',
     })
     contextMenuListener[action.name] = CKEDITOR.TRISTATE_OFF
+    // Override the heading action
+    if (action.name === 'createHeading') {
+      editor.addMenuGroup('headings')
+      let groupObj = {
+        [action.name]: {
+          label: action.label,
+          group: 'headings',
+          getItems: function () {
+            let ItemsObj = {}
+            action.items.forEach(function (item) {
+              ItemsObj[item.name] = CKEDITOR.TRISTATE_OFF
+            })
+            return ItemsObj
+          },
+        },
+      }
+      // add each item to the groupObject
+      action.items.forEach(function (item) {
+        editor.addCommand(item.name, {
+          exec: function (editor) {
+            const range = editor.getSelection().getRanges()[0]
+            const selected_fragment = range.cloneContents()
+            const selected_text = selected_fragment.getHtml()
+            submitSelectedCallback(new Event('submit'), item.prompt, selected_text)
+          },
+        })
+        groupObj[item.name] = {
+          label: item.label,
+          group: 'headings',
+          command: item.name,
+        }
+      })
+      editor.addMenuItems(groupObj)
+      contextMenuListener['headingsMenu'] = CKEDITOR.TRISTATE_OFF
+    }
   })
   editor.contextMenu.addListener(function (element) {
     return contextMenuListener

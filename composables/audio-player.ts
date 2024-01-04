@@ -52,7 +52,7 @@ export function pausePlayerAfterTimeout(audioPlayer: AudioPlayer) {
 }
 
 export function validAudioPlayer(audioPlayer: AudioPlayer): boolean {
-  return audioPlayer && audioPlayer.player && typeof audioPlayer.player.pause === 'function'
+  return audioPlayer?.player?.pause && typeof audioPlayer.player.pause === 'function'
 }
 
 export function playAssistantAnswerInResponseToUserPrompt(chatMessage: ChatMessage, index: number): void {
@@ -60,8 +60,7 @@ export function playAssistantAnswerInResponseToUserPrompt(chatMessage: ChatMessa
     // reverse order
     let nextAudioPlayer = getAudioPlayer(chatMessage)
     nextAudioPlayer.player.resume()
-    // nextAudioPlayer.muted = false
-    chatMessage.audioPlayer.alreadyPlayed = true
+    nextAudioPlayer.muted = false
     // reverse order
     focusPauseButton(index)
   }
