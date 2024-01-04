@@ -1077,8 +1077,11 @@ function structuredResponsePause(entry: ChatMessage, index: number) {
   }
 }
 
-function showDrawer(bool: boolean) {
-  drawer.value = bool
+function showDrawer(showDrawer: boolean) {
+  if (showDrawer) {
+    storeSession(getActiveSession())
+  }
+  drawer.value = showDrawer
 }
 
 function clearDocumentVars() {
@@ -1092,6 +1095,20 @@ function clearDocumentVars() {
 }
 
 function clearDocument() {
+  // remove the session if editorContent and chatHistory are empty and the activeSession is not the last session)
+  if (
+    activeSession.value.editorContent === '' &&
+    activeSession.value.chatHistory.messages.length === 0 &&
+    sessions.value.length > 1 &&
+    activeSession.value.id !== sessions.value[sessions.value.length - 1].id
+  ) {
+    // remove current session with id from sessions
+    sessions.value = sessions.value.filter(session => session.id !== activeSession.value.id)
+    localStorage.setItem('sessions', JSON.stringify(sessions.value))
+    activeSession.value = sessions.value[sessions.value.length - 1]
+    loadActiveSession()
+    return
+  }
   clearDocumentVars()
   activeSession.value = {
     id: activeSession.value.id,
