@@ -12,6 +12,21 @@ const props = defineProps({
   },
 })
 const emit = defineEmits(['createNewDocument', 'clearDocument', 'clearAllDocuments', 'setActiveSession'])
+
+const documentTitles = computed(() => {
+  let titlesEditorContent = [] as string[]
+  const regex = /<h1>(.*?)<\/h1>/
+
+  props.sessions.forEach((session, index) => {
+    const match = session.editorContent.match(regex)
+    if (match) {
+      titlesEditorContent.push(match[1])
+    } else {
+      titlesEditorContent.push('Document ' + (index + 1))
+    }
+  })
+  return titlesEditorContent
+})
 </script>
 
 <template>
@@ -40,9 +55,10 @@ const emit = defineEmits(['createNewDocument', 'clearDocument', 'clearAllDocumen
       prepend-icon="mdi-file-document"
       :key="session.id"
       @click="$emit('setActiveSession', session.id)"
-      :title="'Document ' + (i + 1)"
+      :title="documentTitles[i]"
       :value="'Document #' + (i + 1)"
       :class="session.id === props.activeSession.id ? 'is-highlighted' : ''"
+      :aria-label="documentTitles[i].includes('Document') ? documentTitles[i] : `Document ${documentTitles[i]}`"
     >
     </v-list-item>
   </v-list>
