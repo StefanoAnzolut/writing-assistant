@@ -1095,29 +1095,42 @@ function clearDocumentVars() {
 }
 
 function clearDocument() {
-  // remove the session if editorContent and chatHistory are empty and the activeSession is not the last session)
-  if (
-    activeSession.value.editorContent === '' &&
-    activeSession.value.chatHistory.messages.length === 0 &&
-    sessions.value.length > 1 &&
-    activeSession.value.id !== sessions.value[sessions.value.length - 1].id
-  ) {
+  // document not empty, just clear it
+  if (activeSession.value.editorContent !== '' || activeSession.value.chatHistory.messages.length !== 0) {
+    clearDocumentVars()
+    activeSession.value = {
+      id: activeSession.value.id,
+      chatHistory: { messages: [] as ChatMessage[] },
+      editorContent: '',
+      structure: false,
+    }
+    localStorage.setItem('sessions', JSON.stringify(sessions.value))
+    return
+  }
+  // empty document, remove it
+  if (sessions.value.length > 1 && activeSession.value.id !== sessions.value[sessions.value.length - 1].id) {
     // remove current session with id from sessions
     sessions.value = sessions.value.filter(session => session.id !== activeSession.value.id)
     localStorage.setItem('sessions', JSON.stringify(sessions.value))
-    activeSession.value = sessions.value[sessions.value.length - 1]
-    loadActiveSession()
-    return
+    // check whether the last session is empty, if yes, set it as active session and do not create a new document
+    let lastSession = sessions.value[sessions.value.length - 1]
+    if (lastSession.editorContent === '' && lastSession.chatHistory.messages.length === 0) {
+      clearDocumentVars()
+      activeSession.value = {
+        id: lastSession.id,
+        chatHistory: { messages: [] as ChatMessage[] },
+        editorContent: '',
+        structure: false,
+      }
+      setActiveSession(lastSession.id)
+      return
+    }
   }
-  clearDocumentVars()
-  activeSession.value = {
-    id: activeSession.value.id,
-    chatHistory: { messages: [] as ChatMessage[] },
-    editorContent: '',
-    structure: false,
-  }
-  storeSession(activeSession.value)
-  showDrawer(false)
+  // last document, create a new one first, then remove the current one
+  createNewDocument()
+  sessions.value = sessions.value.filter(session => session.id !== sessions.value[sessions.value.length - 2].id)
+  localStorage.setItem('sessions', JSON.stringify(sessions.value))
+  loadActiveSession()
   document.getElementById('mic-input-btn')?.focus()
 }
 
