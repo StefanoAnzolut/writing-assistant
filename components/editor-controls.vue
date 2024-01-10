@@ -24,7 +24,7 @@ const { mdAndUp } = useDisplay()
 </script>
 
 <template>
-  <v-container class="d-flex flex-row justify-end read-aloud">
+  <v-container class="d-flex justify-end read-aloud" :class="mdAndUp ? 'flex-row' : 'flex-column'">
     <v-btn
       v-if="props.showReadAloud"
       id="playPauseButtonReadAloud"

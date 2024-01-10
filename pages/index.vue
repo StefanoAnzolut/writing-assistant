@@ -2,6 +2,7 @@
 import { useChat, type Message } from 'ai/vue'
 import * as speechsdk from 'microsoft-cognitiveservices-speech-sdk'
 import * as Tone from 'tone'
+import { useDisplay } from 'vuetify'
 
 import type { AsyncComponentLoader } from 'vue'
 import type { ChatHistory } from '~/models/ChatHistory'
@@ -109,17 +110,10 @@ function onNamespaceLoaded() {
   window.navigator.userAgent.includes('Firefox') ? removeExtraComponents(1000) : removeExtraComponents(500)
 }
 
-function removeExtraComponents(sleepTimer: number = 350) {
+function removeExtraComponents(editorStartUpTimer: number = 350) {
   setTimeout(() => {
-    updateCKEditor(keyDownHandler)
-    setTimeout(() => {
-      // fallback if the visuals are not yet loaded but the namespace is
-      let toolbar = document.getElementsByClassName('cke_top')
-      if (toolbar.length === 0) {
-        updateCKEditor(keyDownHandler)
-      }
-    }, 5000)
-  }, sleepTimer)
+    updateCKEditor()
+  }, editorStartUpTimer)
 }
 
 function keyDownHandler(event: KeyboardEvent) {
@@ -144,9 +138,6 @@ function keyDownHandler(event: KeyboardEvent) {
       chatHistoryExpansionPanel.focus()
     }
     showDrawer(false)
-  }
-  if (event.key === 'F8') {
-    toggleToolbar()
   }
 }
 
@@ -1223,11 +1214,13 @@ if (process.client) {
 function toggleChatHistoryExpanded() {
   chatHistoryExpanded.value = !chatHistoryExpanded.value
 }
+
+const { smAndDown } = useDisplay()
 </script>
 
 <template>
   <v-app class="main-class">
-    <v-navigation-drawer v-if="drawer" class="sidebar" v-model="drawer" temporary>
+    <v-navigation-drawer v-if="drawer" v-model="drawer" temporary>
       <sidebar-items
         :sessions="sessions"
         :activeSession="activeSession"
@@ -1241,7 +1234,7 @@ function toggleChatHistoryExpanded() {
       <v-container>
         <v-row :justify="drawer !== true ? 'start' : 'end'">
           <sidebar-buttons :drawer="drawer" @close-drawer="showDrawer" />
-          <v-col cols="4">
+          <v-col cols="4" :class="smAndDown ? 'pr-0' : ''">
             <div class="card" role="region" aria-labelledby="chat-title">
               <!-- <v-select
             label="Select a speaker"
@@ -1250,6 +1243,7 @@ function toggleChatHistoryExpanded() {
             v-model="selectedSpeaker"
             aria-label="Select a speaker"
           ></v-select> -->
+              <!--   filter: invert(1); Invert the colors via css property -->
               <h1 id="chat-title" class="card-title">Chat</h1>
               <div class="card-text">
                 <div class="chat">
@@ -1267,7 +1261,7 @@ function toggleChatHistoryExpanded() {
               </div>
             </div>
           </v-col>
-          <v-col :cols="drawer !== true ? 8 : 7">
+          <v-col :class="smAndDown ? 'pl-0' : ''">
             <div class="card" role="region" aria-labelledby="editor-title">
               <h1 id="editor-title" class="card-title">Editor</h1>
               <div class="card-text">

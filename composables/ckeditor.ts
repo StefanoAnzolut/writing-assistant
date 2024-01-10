@@ -1,19 +1,3 @@
-export function toggleToolbar(): void {
-  let toolbar = window.document.getElementsByClassName('cke_top')
-  if (toolbar[0].getAttribute('style') === 'display: none') {
-    toolbar[0].setAttribute('style', 'display: block')
-  } else {
-    toolbar[0].setAttribute('style', 'display: none')
-  }
-
-  let bottomBar = document.getElementsByClassName('cke_bottom')
-  if (bottomBar[0].getAttribute('style') === 'display: none') {
-    bottomBar[0].setAttribute('style', 'display: block')
-  } else {
-    bottomBar[0].setAttribute('style', 'display: none')
-  }
-}
-
 export function prepareCKEditor(
   editor: any,
   submitSelectedCallback: (event: Event, prompt: string, selectedTextFromEditor: string) => void
@@ -25,7 +9,19 @@ export function prepareCKEditor(
   removeFormElementRoles()
 }
 
-export function updateCKEditor(keyDownHandler: (event: KeyboardEvent) => void) {
+export function updateCKEditor(): void {
+  // fallback if the visuals are not yet loaded but the namespace is
+  let toolbar = document.getElementsByClassName('cke_top')
+  if (toolbar.length === 0) {
+    setTimeout(() => {
+      updateCKEditor()
+    }, 5000)
+  } else {
+    removeExtraCKEditorElements()
+  }
+}
+
+function removeExtraCKEditorElements(): void {
   let toolbar = document.getElementsByClassName('cke_top')
   toolbar[0].setAttribute('style', 'display: none')
 
@@ -37,11 +33,6 @@ export function updateCKEditor(keyDownHandler: (event: KeyboardEvent) => void) {
 
   let textAreaForm = document.getElementsByTagName('TEXTAREA')
   textAreaForm[0].remove()
-
-  const editorIframe = document.getElementsByTagName('iframe')[0]
-  if (editorIframe && editorIframe.contentWindow) {
-    editorIframe.contentWindow.document.addEventListener('keydown', keyDownHandler)
-  }
 }
 
 export function IsInlineModification(action: string): boolean {

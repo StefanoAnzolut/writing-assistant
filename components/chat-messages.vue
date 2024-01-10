@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ChatMessage } from '~/models/ChatMessage'
+import { useDisplay } from 'vuetify'
 
 const props = defineProps({
   messages: {
@@ -66,6 +67,8 @@ function withoutPrefix(str: string) {
 function firstChunkOnly(str: string) {
   return str.substring(0, 50)
 }
+
+const { mdAndUp } = useDisplay()
 </script>
 <template>
   <v-container v-if="props.messages.length > 2" class="d-flex flex-row justify-center">
@@ -124,7 +127,7 @@ function firstChunkOnly(str: string) {
       </p>
       <div class="regular-font-weight" v-if="showHtml(item.entry)" v-html="item.entry.message.html" />
     </article>
-    <v-container class="d-flex flex-row justify-end">
+    <v-container class="d-flex" :class="mdAndUp ? 'flex-row justify-end' : 'flex-column align-end'">
       <v-btn
         :id="'playPauseButton' + item.index"
         :icon="item.entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
