@@ -708,6 +708,7 @@ function insertParagraphWise(paragraphs: string[]) {
 function handleModificationRequest(content: string) {
   editorContent.value = preprocessHtml(editorContent.value)
   selectedText.value = preprocessHtml(selectedText.value)
+  selectedTextProperties.value.context = preprocessHtml(selectedTextProperties.value.context)
 
   let textReplacement = ''
   if (!containsHtmlTags(content)) {
@@ -773,10 +774,6 @@ function paste(index: number) {
   }
   if (IsInlineModification(lastContextMenuAction.value) && selectedText.value !== '') {
     handleModificationRequest(replacementText)
-    // console.log('PASTE___')
-    // console.log('editorContent:', editorContent.value)
-    // console.log('replacementText:', replacementText.trim())
-    // console.log('includes:', editorContent.value.trim().includes(replacementText.trim()))
     if (editorContent.value.trim().includes(replacementText.trim())) {
       synthesizeSpeech('Modified the selected content directly.', directResponseIndex)
       focusOnEditor(replacementText)

@@ -116,8 +116,9 @@ export function preprocessHtml(content: string): string {
     .replace(/&nbsp;/g, ' ')
   // filter out href link with attribute data-cke-saved-href
   const filteredHrefHTML = decodedHTMLCodes.replace(/ data-cke-saved-href="[^"]*"/g, '')
+  const filteredHTML = filteredHrefHTML.replace(/<br[^>]*>/g, '')
 
-  return filteredHrefHTML
+  return filteredHTML
 }
 
 export function removeHtmlTags(content: string) {
