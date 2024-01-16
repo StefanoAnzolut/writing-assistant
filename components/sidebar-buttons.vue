@@ -12,7 +12,6 @@ defineEmits(['closeDrawer'])
   <div
     class="d-flex justify-center align-center"
     :class="props.drawer === true ? 'sidebar-container-left' : 'sidebar-container-right'"
-    aria-label="Toggle sidebar"
   >
     <v-btn
       :class="props.drawer === true ? 'sidebar-button-left' : 'sidebar-button-right'"
@@ -20,7 +19,7 @@ defineEmits(['closeDrawer'])
       color="white"
       :icon="props.drawer === true ? 'mdi-chevron-right' : 'mdi-chevron-left'"
       @click.stop="$emit('closeDrawer', !props.drawer)"
-      :aria-label="props.drawer === true ? 'Close sidebar' : 'Open sidebar'"
+      :aria-label="props.drawer === true ? 'Close all chats navigation' : 'Open all chats navigation'"
     ></v-btn>
   </div>
 </template>

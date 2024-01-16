@@ -90,45 +90,29 @@ const { mdAndUp } = useDisplay()
     class="chat-message ma-2"
     :class="item.entry.message.role === 'user' ? 'user-prompt' : 'assistant-answer'"
   >
-    <article class="chat-inner" :aria-label="`${removeHtmlTags(firstChunkOnly(item.entry.message.content))}`">
-      <h2 class="aria-invisible" v-if="item.entry.message.role === 'user'">
-        {{ removeHtmlTags(firstChunkOnly(item.entry.message.content)) }}
-      </h2>
-      <v-container class="d-flex flex-row justify-end pt-1 pl-0 pr-3" v-if="item.entry.message.role === 'assistant'">
-        <h3 class="message-title" v-if="item.entry.message.role === 'assistant'">
-          <v-icon icon="mdi-robot" class="pb-1 pr-1" alt=""></v-icon>
-          {{ removeHtmlTags(extractPrefix(item.entry.message.content)) }}
-        </h3>
-        <v-btn
-          v-if="
-            item.entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) && item.entry.message.role === 'assistant'
-          "
-          :id="showHtml(item.entry) ? 'collapseButton' + item.index : 'expandButton' + item.index"
-          :icon="showHtml(item.entry) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-          color="primary"
-          :aria-label="
-            showHtml(item.entry)
-              ? `Collapse structure for ${extractPrefix(item.entry.message.content)}`
-              : `Expand structure for ${extractPrefix(item.entry.message.content)}`
-          "
-          @click="showHtml(item.entry) ? collapse(item.index) : expand(item.index)"
-          size="small"
-        ></v-btn>
-      </v-container>
-      <p class="h3-style pt-1 pb-4" v-if="item.entry.message.role === 'user'">
-        <v-icon icon="mdi-account" alt=""></v-icon>
+    <v-container class="d-flex flex-row justify-end pa-4" v-if="item.entry.message.role === 'assistant'">
+      <h3 class="message-title" v-if="item.entry.message.role === 'assistant'">
+        <v-icon icon="mdi-robot" class="pb-1 pr-1" alt=""></v-icon>
         {{ removeHtmlTags(extractPrefix(item.entry.message.content)) }}
-      </p>
-      <p class="regular-font-weight" v-if="item.entry.message.role === 'user'">
-        {{ removeHtmlTags(withoutPrefix(item.entry.message.content)) }}
-      </p>
-      <p class="regular-font-weight" v-if="item.entry.message.role === 'assistant' && !showHtml(item.entry)">
-        {{ removeHtmlTags(withoutPrefix(item.entry.message.content)) }}
-      </p>
-      <div class="regular-font-weight" v-if="showHtml(item.entry)" v-html="item.entry.message.html" />
-    </article>
-    <v-container class="d-flex" :class="mdAndUp ? 'flex-row justify-end' : 'flex-column align-end'">
+      </h3>
       <v-btn
+        v-if="
+          item.entry.message.content.includes(HTML_EXTRACTION_PLACEHOLDER) && item.entry.message.role === 'assistant'
+        "
+        :id="showHtml(item.entry) ? 'collapseButton' + item.index : 'expandButton' + item.index"
+        :icon="showHtml(item.entry) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+        color="primary"
+        class="ma-1"
+        :aria-label="
+          showHtml(item.entry)
+            ? `Collapse structure for ${extractPrefix(item.entry.message.content)}`
+            : `Expand structure for ${extractPrefix(item.entry.message.content)}`
+        "
+        @click="showHtml(item.entry) ? collapse(item.index) : expand(item.index)"
+        size="small"
+      ></v-btn>
+      <v-btn
+        v-if="item.entry.message.role === 'assistant'"
         :id="'playPauseButton' + item.index"
         :icon="item.entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
         class="ma-1"
@@ -143,6 +127,7 @@ const { mdAndUp } = useDisplay()
       >
       </v-btn>
       <v-btn
+        v-if="item.entry.message.role === 'assistant'"
         :id="'addToChatEditor' + item.index"
         icon="mdi-content-paste"
         class="ma-1"
@@ -151,26 +136,45 @@ const { mdAndUp } = useDisplay()
         :aria-label="`Add ${extractPrefix(item.entry.message.content)} to text editor`"
         size="small"
         :disabled="item.entry.message.alreadyPasted"
-        v-if="item.entry.message.role === 'assistant'"
+      >
+      </v-btn>
+    </v-container>
+    <h3 class="pa-4" v-if="item.entry.message.role === 'user'">
+      <v-icon icon="mdi-account" alt=""></v-icon>
+      {{ removeHtmlTags(extractPrefix(item.entry.message.content)) }}
+    </h3>
+    <article class="chat-inner" :aria-label="`${removeHtmlTags(firstChunkOnly(item.entry.message.content))}`">
+      <p class="regular-font-weight" v-if="item.entry.message.role === 'user'">
+        {{ removeHtmlTags(withoutPrefix(item.entry.message.content)) }}
+      </p>
+      <p class="regular-font-weight" v-if="item.entry.message.role === 'assistant' && !showHtml(item.entry)">
+        {{ removeHtmlTags(withoutPrefix(item.entry.message.content)) }}
+      </p>
+      <div class="regular-font-weight" v-if="showHtml(item.entry)" v-html="item.entry.message.html" />
+    </article>
+    <v-container
+      class="d-flex"
+      :class="mdAndUp ? 'flex-row justify-end' : 'flex-column align-end'"
+      v-if="item.entry.message.role === 'user'"
+    >
+      <v-btn
+        :id="'playPauseButton' + item.index"
+        :icon="item.entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
+        class="ma-1"
+        color="success"
+        @click="$emit('pause', item.entry, item.index)"
+        :aria-label="
+          item.entry.audioPlayer.muted
+            ? `Play ${extractPrefix(item.entry.message.content)}`
+            : `Pause ${extractPrefix(item.entry.message.content)}`
+        "
+        size="small"
       >
       </v-btn>
     </v-container>
   </div>
 </template>
 <style scoped>
-/* Somehow, visibility hidden lead to inconsitent reading order for screen readers.
-https://stackoverflow.com/questions/62107074/how-to-hide-a-text-and-make-it-accessible-by-screen-reader */
-.aria-invisible {
-  border: 0;
-  clip: rect(0 0 0 0);
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  padding: 0;
-  position: absolute;
-  width: 1px;
-}
-
 .chat-message {
   white-space: pre-wrap;
   display: block;

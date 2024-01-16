@@ -4,6 +4,7 @@ export interface AudioPlayer {
   id: string
   player: SpeakerAudioDestination
   muted: boolean
+  isPlaying: boolean
   alreadyPlayed: boolean
   resynthesizeAudio: boolean
 }

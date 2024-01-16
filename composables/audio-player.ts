@@ -8,6 +8,7 @@ export function newAudioPlayer(): AudioPlayer {
     id: Date.now().toString(),
     muted: true,
     alreadyPlayed: false,
+    isPlaying: false,
     resynthesizeAudio: false,
   }
 }
@@ -18,6 +19,7 @@ export function updateAudioPlayer(chatMessage: ChatMessage): AudioPlayer {
     id: Date.now().toString(),
     muted: true,
     alreadyPlayed: chatMessage && chatMessage.audioPlayer.alreadyPlayed === true ? true : false,
+    isPlaying: false,
     resynthesizeAudio: false,
   }
 }

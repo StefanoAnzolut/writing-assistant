@@ -283,7 +283,7 @@ function loadActiveSession() {
 }
 /** Outer submission wrapper for all prompts */
 function handleSubmitWrapper(e: any) {
-  if (lastContextMenuAction.value === 'askQuestion') {
+  if (IsInlineModification(lastContextMenuAction.value)) {
     // We already included the highlighted/selected text in the context
   } else {
     // Include the whole document (i.e. editor content) in the context
@@ -1105,9 +1105,18 @@ function structuredResponsePause(entry: ChatMessage, index: number) {
   }
 }
 
-function showDrawer(showDrawer: boolean) {
+async function showDrawer(showDrawer: boolean) {
   if (showDrawer) {
+    await nextTick()
+    setTimeout(() => {
+      document.getElementById('create-new-chat-button')?.focus()
+    }, 0)
     storeSession(getActiveSession())
+  } else {
+    await nextTick()
+    setTimeout(() => {
+      document.getElementById('mic-input-btn')?.focus()
+    }, 0)
   }
   drawer.value = showDrawer
 }
@@ -1257,16 +1266,18 @@ const { smAndDown } = useDisplay()
 
 <template>
   <v-app class="main-class">
-    <v-navigation-drawer v-if="drawer" v-model="drawer" temporary>
-      <sidebar-items
-        :sessions="sessions"
-        :activeSession="activeSession"
-        @set-active-session="setActiveSession"
-        @clear-all-documents="clearAllDocuments"
-        @create-new-document="createNewDocument"
-        @clear-document="clearDocument"
-      />
-    </v-navigation-drawer>
+    <div role="region" aria-labelledby="all-chats-title">
+      <v-navigation-drawer v-model="drawer" temporary>
+        <sidebar-items
+          :sessions="sessions"
+          :activeSession="activeSession"
+          @set-active-session="setActiveSession"
+          @clear-all-documents="clearAllDocuments"
+          @create-new-document="createNewDocument"
+          @clear-document="clearDocument"
+        />
+      </v-navigation-drawer>
+    </div>
     <main>
       <v-container>
         <v-row :justify="drawer !== true ? 'start' : 'end'">
