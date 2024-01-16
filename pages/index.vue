@@ -139,6 +139,33 @@ function keyDownHandler(event: KeyboardEvent) {
     }
     showDrawer(false)
   }
+  if (event.key === 'F8') {
+    saveSessionDataAsTextFile()
+  }
+}
+
+function saveSessionDataAsTextFile() {
+  const blob = new Blob([localStorage.getItem('sessions') ?? '[]'], { type: 'text/plain;charset=utf-8' })
+  // Create a link element
+  const link = document.createElement('a')
+
+  // Create an object URL for the blob
+  const url = window.URL.createObjectURL(blob)
+
+  // Set the link's href to the object URL
+  link.href = url
+
+  // Set the download attribute of the link to the desired file name
+  link.download = 'Session_Writing_Assistant.txt'
+
+  // Append the link to the body
+  document.body.appendChild(link)
+
+  // Programmatically click the link to start the download
+  link.click()
+
+  // Once the download has started, remove the link from the body
+  document.body.removeChild(link)
 }
 
 function clearEditorContent() {
