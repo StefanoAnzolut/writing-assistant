@@ -281,6 +281,16 @@ function loadActiveSession() {
   }
   muteAllAudioplayers()
 }
+/** Outer submission wrapper for all prompts */
+function handleSubmitWrapper(e: any) {
+  if (lastContextMenuAction.value === 'askQuestion') {
+    // We already included the highlighted/selected text in the context
+  } else {
+    // Include the whole document (i.e. editor content) in the context
+    input.value = input.value.concat('<document>' + editorContent.value + '</document>')
+  }
+  handleSubmit(e)
+}
 
 /** Text completion submission wrapper */
 function submit(e: any): void {
@@ -291,7 +301,7 @@ function submit(e: any): void {
     input.value = input.value.concat('<text>' + selectedText.value + '</text>')
     selectedText.value = ''
   }
-  handleSubmit(e)
+  handleSubmitWrapper(e)
   removeSelection()
   inputDisabled.value = true
   setTimeout(() => {
@@ -338,7 +348,7 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     // console.log('prompt:', prompt)
     input.value = input.value.concat(prompt + selectedTextFromEditor)
   }
-  handleSubmit(event)
+  handleSubmitWrapper(event)
   setTimeout(() => {
     console.log(messages.value)
   }, 1000)
@@ -729,6 +739,9 @@ function insertParagraphWise(paragraphs: string[]) {
     }
     editorContent.value = editorContent.value.concat(`<p>${paragraph}</p>`)
   }
+  // Remove white spaces between html tags
+  editorContent.value = editorContent.value.replace(/(<(p|h[1-6])>&nbsp;<\/(p|h[1-6])>\s*)+/g, '')
+  editorContent.value = editorContent.value.replace(/(<(p|h[1-6])><br><\/(p|h[1-6])>\s*)+/g, '')
   // focusOnEndOfEditor()
 }
 

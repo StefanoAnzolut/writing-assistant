@@ -3,6 +3,7 @@ import type { Message } from '~/models/Message'
 
 export function preprocessUserMessage(message: Message): Message {
   message.content = message.content.replace('<text>', '').replace('</text>', '')
+
   if (message.content.includes('Spell check the following content')) {
     message.content = 'Spell checking your highlighted text.'
   }
@@ -11,6 +12,14 @@ export function preprocessUserMessage(message: Message): Message {
     message.content = 'Summarizing your highlighted text.'
   }
   message.content = message.content.replace('Summarize the following content', '').replace('</text>', '')
+
+  // Remove the document tag from the shown message in the chatHistory
+  const regex = /<document>(.*?)<\/document>/s
+  const match = message.content.match(regex)
+  if (match) {
+    message.content = message.content.replace(match[0], '')
+  }
+
   return message
 }
 
