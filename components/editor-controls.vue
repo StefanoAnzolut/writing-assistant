@@ -31,11 +31,12 @@ const { mdAndUp } = useDisplay()
       :icon="props.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
       class="ma-1"
       :color="props.audioPlayer.muted ? 'success' : 'error'"
-      :aria-label="props.audioPlayer.muted ? 'Play' : 'Pause'"
+      :aria-label="props.audioPlayer.muted ? 'Resume' : 'Pause'"
       @click="$emit('pauseReadAloud', props.audioPlayer, props.readAloudPlayerIndex)"
       size="small"
     ></v-btn>
     <v-btn
+      id="read-only"
       :class="mdAndUp === true ? 'v-btn--size-default' : ''"
       class="ma-1 no-uppercase"
       :size="mdAndUp === true ? 'null' : 'small'"
@@ -44,6 +45,7 @@ const { mdAndUp } = useDisplay()
       >{{ props.readOnly ? 'Deactivate read only' : 'Activate read only' }}</v-btn
     >
     <v-btn
+      id="download-word"
       :class="mdAndUp === true ? 'v-btn--size-default' : ''"
       class="ma-1 no-uppercase"
       color="primary"

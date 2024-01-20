@@ -10,8 +10,12 @@ const props = defineProps({
     type: Object as PropType<Session>,
     required: true,
   },
+  drawer: {
+    type: Boolean as PropType<boolean>,
+    required: true,
+  },
 })
-const emit = defineEmits(['createNewDocument', 'clearDocument', 'clearAllDocuments', 'setActiveSession'])
+const emit = defineEmits(['createNewDocument', 'clearDocument', 'clearAllDocuments', 'setActiveSession', 'showDrawer'])
 
 const searchText = ref('')
 
@@ -39,15 +43,15 @@ function setUpShownSessions() {
   shownSessions = Array.from(tempSessionsSet)
 }
 
-let chatTitles = reactive([] as string[])
+let documentTitles = reactive([] as string[])
 
-function setUpChatTitles() {
+function setDocumentTitles() {
   let titlesEditorContent = [] as string[]
   const regex = /<h1>(.*?)<\/h1>/
 
   shownSessions.forEach(session => {
     if (session.editorContent.length === 0 && session.chatHistory.messages.length === 0) {
-      titlesEditorContent.push('Empty chat')
+      titlesEditorContent.push('Empty document')
       return
     }
     const match = session.editorContent.match(regex)
@@ -71,10 +75,38 @@ function setUpChatTitles() {
       return
     }
 
-    titlesEditorContent.push('Chat')
+    titlesEditorContent.push('Document without title')
   })
-  chatTitles = titlesEditorContent
+  documentTitles = titlesEditorContent
   return
+}
+
+function checkInFocus() {
+  const activeElement = document.activeElement
+  if (activeElement) {
+    const activeElementId = activeElement.id
+    if (
+      activeElementId === 'navgiation-title' ||
+      activeElementId === 'create-new-document' ||
+      activeElementId === 'clear-document' ||
+      activeElementId === 'clear-all-documents'
+    ) {
+      return true
+    }
+    for (let i = 0; i < shownSessions.length; i++) {
+      if (activeElementId === 'document-list-item' + i) {
+        return true
+      }
+    }
+  }
+  return false
+}
+if (process.client) {
+  setInterval(() => {
+    if (checkInFocus() && props.drawer === false) {
+      emit('showDrawer', true)
+    }
+  }, 500)
 }
 
 onMounted(() => {
@@ -83,46 +115,49 @@ onMounted(() => {
   // Here we used two methods instead of computed properties
   setTimeout(() => {
     setUpShownSessions()
-    setUpChatTitles()
+    setDocumentTitles()
   }, 1000)
 })
 </script>
 
 <template>
-  <h1 id="all-chat-title" class="pa-4">All chats navigation</h1>
+  <h1 id="navgiation-title" class="pa-4">Navigation</h1>
   <v-divider class="my-2" aria-hidden="true"></v-divider>
   <v-list density="compact" nav>
     <v-list-item
-      id="create-new-chat-button"
+      id="create-new-document"
       prepend-icon="mdi-plus"
-      title="Create new chat"
-      value="Create new chat"
+      title="Create new document"
+      value="Create new document"
       @click="$emit('createNewDocument')"
     ></v-list-item>
     <v-list-item
+      id="clear-document"
       prepend-icon="mdi-refresh"
-      title="Clear current chat"
-      value="Clear current chat"
+      title="Clear current document"
+      value="Clear current document"
       @click="$emit('clearDocument')"
     ></v-list-item>
     <v-list-item
+      id="clear-all-documents"
       prepend-icon="mdi-delete"
-      title="Clear all chats"
-      value="Clear all chats"
+      title="Clear all documents"
+      value="Clear all documents"
       @click="$emit('clearAllDocuments')"
     ></v-list-item>
     <v-divider class="my-2" aria-hidden="true"></v-divider>
     <!-- <v-text-field v-model="searchText" label="Search chats" variant="outlined"></v-text-field> -->
-    <div aria-label="List of chats">
+    <div aria-label="List of documents">
       <v-list-item
         v-for="(session, i) in shownSessions"
         prepend-icon="mdi-file-document"
+        :id="'document-list-item' + i"
         :key="session.id"
         @click="$emit('setActiveSession', session.id)"
-        :title="chatTitles[i]"
-        :value="'Chat #' + (i + 1)"
+        :title="documentTitles[i]"
+        :value="'Document #' + (i + 1)"
         :class="session.id === props.activeSession.id ? 'is-highlighted' : ''"
-        :aria-label="chatTitles[i] + ' link'"
+        :aria-label="documentTitles[i] + ' link'"
       >
       </v-list-item>
     </div>

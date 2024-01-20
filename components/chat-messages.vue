@@ -12,7 +12,7 @@ const props = defineProps({
     required: true,
   },
 })
-defineEmits(['paste', 'pause', 'toggleChatHistory'])
+defineEmits(['paste', 'pause', 'replay', 'toggleChatHistory'])
 
 const chatMessagesExtended = computed(() => {
   let chatMessages = [] as { entry: ChatMessage; index: number }[]
@@ -68,6 +68,26 @@ function firstChunkOnly(str: string) {
   return str.substring(0, 50)
 }
 
+function playPauseButtonAriaLabel(entry: ChatMessage) {
+  // if audio not muted => pause button
+  if (!entry.audioPlayer.muted) {
+    return `Pause ${extractPrefix(entry.message.content)}`
+  }
+  // audio not synthesized yet => internalAudio not defined
+  if (!entry.audioPlayer.player.internalAudio) {
+    return `Play ${extractPrefix(entry.message.content)}`
+  }
+  // audio hasn't played yet or is finished => play button
+  if (
+    entry.audioPlayer.player.internalAudio.currentTime === 0 ||
+    entry.audioPlayer.player.internalAudio.currentTime === entry.audioPlayer.player.internalAudio.duration
+  ) {
+    return `Play ${extractPrefix(entry.message.content)}`
+  }
+  // otherwise resume button
+  return `Resume ${extractPrefix(entry.message.content)}`
+}
+
 const { mdAndUp } = useDisplay()
 </script>
 <template>
@@ -112,17 +132,29 @@ const { mdAndUp } = useDisplay()
         size="small"
       ></v-btn>
       <v-btn
+        v-if="
+          item.entry.message.role === 'assistant' &&
+          item.entry.audioPlayer.alreadyPlayed &&
+          validAudioPlayer(item.entry.audioPlayer) &&
+          !audioPlayerAtEnd(item.entry.audioPlayer)
+        "
+        :id="'replayButton' + item.index"
+        icon="mdi-replay"
+        class="ma-1"
+        color="primary"
+        @click="$emit('replay', item.entry, item.index)"
+        :aria-label="`Replay ${extractPrefix(item.entry.message.content)}`"
+        size="small"
+      >
+      </v-btn>
+      <v-btn
         v-if="item.entry.message.role === 'assistant'"
         :id="'playPauseButton' + item.index"
         :icon="item.entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
         class="ma-1"
-        color="success"
+        :color="item.entry.audioPlayer.muted ? 'success' : 'error'"
         @click="$emit('pause', item.entry, item.index)"
-        :aria-label="
-          item.entry.audioPlayer.muted
-            ? `Play ${extractPrefix(item.entry.message.content)}`
-            : `Pause ${extractPrefix(item.entry.message.content)}`
-        "
+        :aria-label="playPauseButtonAriaLabel(item.entry)"
         size="small"
       >
       </v-btn>
@@ -153,21 +185,32 @@ const { mdAndUp } = useDisplay()
       <div class="regular-font-weight" v-if="showHtml(item.entry)" v-html="item.entry.message.html" />
     </article>
     <v-container
+      v-if="item.entry.message.role === 'user'"
       class="d-flex"
       :class="mdAndUp ? 'flex-row justify-end' : 'flex-column align-end'"
-      v-if="item.entry.message.role === 'user'"
     >
+      <v-btn
+        v-if="
+          item.entry.audioPlayer.alreadyPlayed &&
+          validAudioPlayer(item.entry.audioPlayer) &&
+          !audioPlayerAtEnd(item.entry.audioPlayer)
+        "
+        :id="'replayButton' + item.index"
+        icon="mdi-replay"
+        class="ma-1"
+        color="primary"
+        @click="$emit('replay', item.entry, item.index)"
+        :aria-label="`Replay ${extractPrefix(item.entry.message.content)}`"
+        size="small"
+      >
+      </v-btn>
       <v-btn
         :id="'playPauseButton' + item.index"
         :icon="item.entry.audioPlayer.muted ? 'mdi-play' : 'mdi-pause'"
         class="ma-1"
-        color="success"
+        :color="item.entry.audioPlayer.muted ? 'success' : 'error'"
         @click="$emit('pause', item.entry, item.index)"
-        :aria-label="
-          item.entry.audioPlayer.muted
-            ? `Play ${extractPrefix(item.entry.message.content)}`
-            : `Pause ${extractPrefix(item.entry.message.content)}`
-        "
+        :aria-label="playPauseButtonAriaLabel(item.entry)"
         size="small"
       >
       </v-btn>

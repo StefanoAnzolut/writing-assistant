@@ -17,9 +17,9 @@ defineEmits(['closeDrawer'])
       :class="props.drawer === true ? 'sidebar-button-left' : 'sidebar-button-right'"
       variant="text"
       color="white"
-      :icon="props.drawer === true ? 'mdi-chevron-right' : 'mdi-chevron-left'"
+      :icon="props.drawer === true ? 'mdi-chevron-left' : 'mdi-chevron-right'"
       @click.stop="$emit('closeDrawer', !props.drawer)"
-      :aria-label="props.drawer === true ? 'Close all chats navigation' : 'Open all chats navigation'"
+      :aria-label="props.drawer === true ? 'Collapse document navigation' : 'Expand document navigation'"
     ></v-btn>
   </div>
 </template>

@@ -637,7 +637,8 @@ watch(resynthesizeAudio, (_): void => {
         pausePlayer(message.audioPlayer)
         muteAllAudioplayers()
         resumePlayer(message.audioPlayer)
-        // necessary due to event not firing
+        // Workaround
+        // necessary due to onAudioEnd not firing for re-synthesized audio
         pausePlayerAfterTimeout(message.audioPlayer)
       }
     })
@@ -1105,11 +1106,23 @@ function structuredResponsePause(entry: ChatMessage, index: number) {
   }
 }
 
+function replay(entry: ChatMessage, index: number) {
+  // Workaround
+  // necessary due to onAudioEnd not firing for re-synthesized audio
+  pausePlayerAfterTimeout(entry.audioPlayer)
+
+  handlePause(entry, index)
+  entry.audioPlayer.player.internalAudio.currentTime = 0
+  entry.audioPlayer.player.resume()
+  entry.audioPlayer.muted = false
+  focusPauseButton(index)
+}
+
 async function showDrawer(showDrawer: boolean) {
   if (showDrawer) {
     await nextTick()
     setTimeout(() => {
-      document.getElementById('create-new-chat-button')?.focus()
+      document.getElementById('create-new-document')?.focus()
     }, 0)
     storeSession(getActiveSession())
   } else {
@@ -1119,6 +1132,25 @@ async function showDrawer(showDrawer: boolean) {
     }, 0)
   }
   drawer.value = showDrawer
+}
+
+function checkInFocus() {
+  const activeElement = document.activeElement
+  if (activeElement) {
+    const activeElementId = activeElement.id
+    if (activeElementId === 'mic-input-btn') {
+      return true
+    }
+  }
+  return false
+}
+
+if (process.client) {
+  setInterval(() => {
+    if (checkInFocus() && drawer.value === true) {
+      showDrawer(false)
+    }
+  }, 500)
 }
 
 function clearDocumentVars() {
@@ -1271,10 +1303,12 @@ const { smAndDown } = useDisplay()
         <sidebar-items
           :sessions="sessions"
           :activeSession="activeSession"
+          :drawer="drawer"
           @set-active-session="setActiveSession"
           @clear-all-documents="clearAllDocuments"
           @create-new-document="createNewDocument"
           @clear-document="clearDocument"
+          @show-drawer="showDrawer"
         />
       </v-navigation-drawer>
     </div>
@@ -1303,6 +1337,7 @@ const { smAndDown } = useDisplay()
                     :chatHistoryExpanded="chatHistoryExpanded"
                     @paste="paste"
                     @pause="pause"
+                    @replay="replay"
                     @toggle-chat-history="toggleChatHistoryExpanded"
                   />
                 </div>
