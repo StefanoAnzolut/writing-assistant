@@ -171,10 +171,10 @@ const { mdAndUp } = useDisplay()
       >
       </v-btn>
     </v-container>
-    <h3 class="pa-4" v-if="item.entry.message.role === 'user'">
+    <h2 class="h3-style pa-4" v-if="item.entry.message.role === 'user'">
       <v-icon icon="mdi-account" alt=""></v-icon>
       {{ removeHtmlTags(extractPrefix(item.entry.message.content)) }}
-    </h3>
+    </h2>
     <article class="chat-inner" :aria-label="`${removeHtmlTags(firstChunkOnly(item.entry.message.content))}`">
       <p class="regular-font-weight" v-if="item.entry.message.role === 'user'">
         {{ removeHtmlTags(withoutPrefix(item.entry.message.content)) }}
