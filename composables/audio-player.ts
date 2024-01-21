@@ -48,9 +48,19 @@ export function pausePlayerAfterTimeout(audioPlayer: AudioPlayer) {
   // https://github.com/microsoft/cognitive-services-speech-sdk-js/issues/699
   setTimeout(() => {
     setTimeout(() => {
-      pausePlayer(audioPlayer)
+      if (audioPlayerAtEnd(audioPlayer)) {
+        pausePlayer(audioPlayer)
+      }
     }, audioPlayer.player.internalAudio.duration * 1000)
   }, 200)
+}
+
+export function audioPlayerAtEnd(audioPlayer: AudioPlayer): boolean {
+  if (!validAudioPlayer(audioPlayer) || !audioPlayer.player.internalAudio) {
+    return false
+  }
+  const timeDelta = audioPlayer.player.internalAudio.duration - audioPlayer.player.internalAudio.currentTime
+  return audioPlayer.player.internalAudio.duration > 0 && timeDelta < 0.5
 }
 
 export function validAudioPlayer(audioPlayer: AudioPlayer): boolean {

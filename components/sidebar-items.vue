@@ -107,6 +107,10 @@ if (process.client) {
       emit('showDrawer', true)
     }
   }, 500)
+  setInterval(() => {
+    setUpShownSessions()
+    setDocumentTitles()
+  }, 3000)
 }
 
 onMounted(() => {
@@ -116,7 +120,7 @@ onMounted(() => {
   setTimeout(() => {
     setUpShownSessions()
     setDocumentTitles()
-  }, 1000)
+  }, 500)
 })
 </script>
 

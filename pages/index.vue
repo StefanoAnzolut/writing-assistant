@@ -93,6 +93,10 @@ const PROMPT_TAKES_A_WHILE = "Understood, I'm processing your prompt, hold on. T
 const editor = ref({} as any)
 const readOnly = ref(false)
 
+const showDialog = ref(false)
+const dialogReplacementText = ref('')
+const dialogPasteIndex = ref(0)
+
 /** Load editor configuration from a static file server
  *  as of right now (Nuxt 3) does not provide such a thing. */
 const editorUrl = 'https://a11y-editor-proxy.fly.dev/ckeditor.js'
@@ -138,6 +142,10 @@ function keyDownHandler(event: KeyboardEvent) {
       chatHistoryExpansionPanel.focus()
     }
     showDrawer(false)
+    if (showDialog.value) {
+      showDialog.value = false
+      chatHistory.messages[dialogPasteIndex.value].message.alreadyPasted = false
+    }
   }
   if (event.key === 'F8') {
     saveSessionDataAsTextFile()
@@ -270,7 +278,10 @@ function loadActiveSession() {
       chatHistory.messages = activeSession.value.chatHistory.messages.toReversed()
     }
   }
-
+  if (containsHeadings()) {
+    activeSession.value.structure = true
+    structuredContentPasted.value = true
+  }
   if (chatHistory.messages.length > 0) {
     setMessages(
       chatHistory.messages.map(message => {
@@ -326,7 +337,6 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
     return
   }
   const innerHtml = getHTMLFromRange(range).replace('<br>', '')
-  // console.log(innerHtml)
   selectedTextProperties.value = {
     startOffset: range.startOffset,
     endOffset: range.endOffset,
@@ -343,9 +353,6 @@ function submitSelectedCallback(event: Event, prompt: string, selectedTextFromEd
   if (prompt.includes('[MODIFICATION_REQUEST]: Spell check')) {
     input.value = input.value.concat(prompt + preprocessHtml(selectedTextProperties.value.context))
   } else {
-    // console.log('Normal callback flow')
-    // console.log('selectedTextFromEditor:', selectedTextFromEditor)
-    // console.log('prompt:', prompt)
     input.value = input.value.concat(prompt + selectedTextFromEditor)
   }
   handleSubmitWrapper(event)
@@ -383,7 +390,6 @@ function changeHeadingLevel(prompt: string, context: string) {
       oldElement.parentNode.replaceChild(newElement, oldElement)
     }
     const resultingHTML = htmlDoc.body.innerHTML
-    console.log(resultingHTML)
     handleModificationRequest(resultingHTML)
   }
 }
@@ -509,7 +515,6 @@ watch(messages, (_): void => {
 })
 
 function handleAssistantAnswer(chatMessage: ChatMessage, message: Message): void {
-  // console.log('Assistant Answer is new?', chatMessage.message.new)
   checkHTMLInAnswer(message.content)
   addPrefixToAssistantAnswer(chatMessage, messageInteractionCounter.value)
   if (synthesizeIntermediateAnswer(chatMessage)) {
@@ -548,8 +553,6 @@ function sameContentAsLastMessage(chatMessage: ChatMessage): boolean {
 
 function synthesizeIntermediateAnswer(chatMessage: ChatMessage): boolean {
   if (IsInlineModification(lastContextMenuAction.value)) {
-    // console.log('isInlineModification', lastContextMenuAction.value)
-    // console.log(chatMessage.message.content)
     if (
       !chatMessage.message.content.includes('Here are the modifications') &&
       !chatMessage.message.content.includes('Here are the corrections')
@@ -558,16 +561,15 @@ function synthesizeIntermediateAnswer(chatMessage: ChatMessage): boolean {
     }
   }
   const inludesStructuredResponse = chatMessage.message.content.includes('ai-response')
+  // Check if the structuredResponse contains the ai-response tag if not check whether the ai just forgot to add it, by calling containsHeadings()
   if (inludesStructuredResponse) {
     return false
   }
-  // console.log('intermediateAnswerSynthesisCounter', intermediateAnswerSynthesisCounter.value)
   if (intermediateAnswerSynthesisCounter.value % 13 === 0) {
     chatMessage.message.new = true
   }
 
   if (chatMessage.message.content.length > 200 && chatMessage.message.new === true) {
-    // console.log('content', chatMessage.message.content)
     chatMessage.message.new = false
     intermediateAnswerSynthesisCounter.value = 1
     return true
@@ -645,6 +647,17 @@ watch(resynthesizeAudio, (_): void => {
   }
 })
 
+watch(showDialog, (_): void => {
+  if (showDialog.value) {
+    setTimeout(() => {
+      const dialog = document.getElementById('insert-new-document-dialog')
+      if (dialog) {
+        dialog.focus()
+      }
+    }, 1000)
+  }
+})
+
 function replaceExpression(assistantResponse: string, expression: RegExp) {
   const match = assistantResponse.match(expression)
   if (match && match[1]) {
@@ -693,10 +706,6 @@ async function assignNewSpeechRecognizer() {
 async function sttFromMic() {
   const start = Date.now()
   speechRecognizer.value.startContinuousRecognitionAsync()
-  // speechRecognizer.value.recognizing = (_, e) => {
-  //   console.log(`RECOGNIZING: Text=${e.result.text}`)
-  // }
-
   // Signals that the speech service has started to detect speech.
   // speechRecognizer.value.speechStartDetected = (_, e) => {
   //   console.log('(speechStartDetected) SessionId: ' + e.sessionId)
@@ -811,7 +820,6 @@ function paste(index: number) {
   const isHtml = isHtmlAlreadyExtracted(replacementText) || message.html
   if (isHtml) {
     replacementText = preprocessHtml(message.html)
-    console.log(replacementText)
   }
   if (IsInlineModification(lastContextMenuAction.value) && selectedText.value !== '') {
     handleModificationRequest(replacementText)
@@ -829,21 +837,23 @@ function paste(index: number) {
   }
 
   if (isHtml) {
-    if (!structuredContentPasted.value && !IsInlineModification(lastContextMenuAction.value)) {
-      synthesizeSpeech('Pasted structured to the text editor.', directResponseIndex)
+    if (!structuredContentPasted.value && !IsInlineModification(lastContextMenuAction.value) && !containsHeadings()) {
+      synthesizeSpeech('Pasted structure to the text editor.', directResponseIndex)
       editorContent.value += replacementText
       focusOnEditor(replacementText)
       structuredContentPasted.value = true
       // focusOnEndOfEditor()
       return
     }
-    synthesizeSpeech(
-      'A structured document already exists, creating a new document. Use the sidebar on the left to navigate between documents.',
-      directResponseIndex
-    )
+    // synthesizeSpeech(
+    //   'A structured document already exists, creating a new document. Use the sidebar on the left to navigate between documents.',
+    //   directResponseIndex
+    // )
     // create a new session with the same chat history but with the editor content being the replacement text
-    createNewStructuredDocument({ messages: chatHistory.messages }, replacementText)
-
+    showDialog.value = true
+    dialogReplacementText.value = replacementText
+    dialogPasteIndex.value = index
+    // createNewStructuredDocument({ messages: chatHistory.messages }, replacementText)
     return
   }
   if (editorContent.value === '') {
@@ -862,7 +872,39 @@ function paste(index: number) {
   }
   insertParagraphWise(replacementText.split('\n'))
   focusOnEditor(replacementText.split('\n')[replacementText.split('\n').length - 1])
+  removeExtraWhiteSpaceParagraphs()
   // scrollToBottomTextEditor()
+}
+
+async function removeExtraWhiteSpaceParagraphs() {
+  // wait for the editor to be updated before stripping whitespace
+  setTimeout(() => {
+    editorContent.value = editorContent.value.replace(/(<(p|h[1-6])>&nbsp;<\/(p|h[1-6])>\s*)+/g, '')
+  }, 1000)
+}
+
+function containsHeadings() {
+  const STRUCTURED_DOCUMENT_HAS_ATLEAST_5_HEADINGS = /<h[1-6]>([\s\S]*?)<\/h[1-6]>/g
+  const match = editorContent.value.match(STRUCTURED_DOCUMENT_HAS_ATLEAST_5_HEADINGS)
+  if (match && match.length >= 5) {
+    return true
+  }
+  return false
+}
+
+function newDocumentFromDialog() {
+  createNewStructuredDocument({ messages: chatHistory.messages }, dialogReplacementText.value)
+  showDialog.value = false
+}
+
+function overwriteDocumentFromDialog() {
+  editorContent.value = dialogReplacementText.value
+  showDialog.value = false
+}
+
+function appendDocumentFromDialog() {
+  editorContent.value += dialogReplacementText.value
+  showDialog.value = false
 }
 
 function getLastAssistantResponseIndex(): number {
@@ -952,9 +994,7 @@ function ifUserAnswerIsBeingReadAloud(index: number) {
 
 function configureAudioPlayer(index: number): AudioPlayer {
   let chatMessage = chatHistory.messages[index]
-  console.log('index', index)
   let audioPlayer = updateAudioPlayer(chatHistory.messages[index])
-  console.log(audioPlayer)
   audioPlayer.player.onAudioEnd = audioPlayer => {
     audioPlayer.pause()
     // reverse order
@@ -1118,19 +1158,16 @@ function replay(entry: ChatMessage, index: number) {
   focusPauseButton(index)
 }
 
-async function showDrawer(showDrawer: boolean) {
+async function showDrawer(showDrawer: boolean, id: string = 'mic-input-btn') {
   if (showDrawer) {
     await nextTick()
-    setTimeout(() => {
-      document.getElementById('create-new-document')?.focus()
-    }, 0)
+    id = 'create-new-document'
     storeSession(getActiveSession())
-  } else {
-    await nextTick()
-    setTimeout(() => {
-      document.getElementById('mic-input-btn')?.focus()
-    }, 0)
   }
+  await nextTick()
+  setTimeout(() => {
+    document.getElementById(id)?.focus()
+  }, 0)
   drawer.value = showDrawer
 }
 
@@ -1149,6 +1186,9 @@ if (process.client) {
   setInterval(() => {
     if (checkInFocus() && drawer.value === true) {
       showDrawer(false)
+    }
+    if (document.activeElement?.id === 'chat-input' && drawer.value === true) {
+      showDrawer(false, 'chat-input')
     }
   }, 500)
 }
@@ -1298,7 +1338,7 @@ const { smAndDown } = useDisplay()
 
 <template>
   <v-app class="main-class">
-    <div role="region" aria-labelledby="all-chats-title">
+    <div role="region" aria-labelledby="navgiation-title">
       <v-navigation-drawer v-model="drawer" temporary>
         <sidebar-items
           :sessions="sessions"
@@ -1313,6 +1353,12 @@ const { smAndDown } = useDisplay()
       </v-navigation-drawer>
     </div>
     <main>
+      <chat-dialog
+        :dialog="showDialog"
+        @new-document="newDocumentFromDialog"
+        @overwrite-document="overwriteDocumentFromDialog"
+        @append-document="appendDocumentFromDialog"
+      />
       <v-container>
         <v-row :justify="drawer !== true ? 'start' : 'end'">
           <sidebar-buttons :drawer="drawer" @close-drawer="showDrawer" />

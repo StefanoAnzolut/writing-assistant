@@ -36,6 +36,14 @@ const { mdAndUp } = useDisplay()
       size="small"
     ></v-btn>
     <v-btn
+      :class="mdAndUp === true ? 'v-btn--size-default' : ''"
+      class="ma-1 no-uppercase"
+      color="primary"
+      :size="mdAndUp === true ? 'null' : 'small'"
+      @click="$emit('clearEditorContent')"
+      >Clear text editor</v-btn
+    >
+    <v-btn
       id="read-only"
       :class="mdAndUp === true ? 'v-btn--size-default' : ''"
       class="ma-1 no-uppercase"
@@ -52,14 +60,6 @@ const { mdAndUp } = useDisplay()
       @click="$emit('downloadWord')"
       :size="mdAndUp === true ? 'null' : 'small'"
       >Download document</v-btn
-    >
-    <v-btn
-      :class="mdAndUp === true ? 'v-btn--size-default' : ''"
-      class="ma-1 no-uppercase"
-      color="primary"
-      :size="mdAndUp === true ? 'null' : 'small'"
-      @click="$emit('clearEditorContent')"
-      >Clear text editor</v-btn
     >
   </v-container>
 </template>
