@@ -1,7 +1,7 @@
 <script setup lang="ts">
 useHead({
-  title: 'Writing Partner',
-  meta: [{ name: 'An AI-powered writing partner' }],
+  title: 'Writing Assistant',
+  meta: [{ name: 'An ai writing assistant' }],
   htmlAttrs: {
     lang: 'en',
   },
