@@ -167,7 +167,6 @@ const { mdAndUp } = useDisplay()
         @click="$emit('paste', item.index)"
         :aria-label="`Add ${extractPrefix(item.entry.message.content)} to text editor`"
         size="small"
-        :disabled="item.entry.message.alreadyPasted"
       >
       </v-btn>
     </v-container>

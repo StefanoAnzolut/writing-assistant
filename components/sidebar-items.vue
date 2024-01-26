@@ -129,6 +129,7 @@ onMounted(() => {
   <v-divider class="my-2" aria-hidden="true"></v-divider>
   <v-list density="compact" nav>
     <v-list-item
+      class="item-icon"
       id="create-new-document"
       prepend-icon="mdi-plus"
       title="Create new document"
@@ -136,6 +137,7 @@ onMounted(() => {
       @click="$emit('createNewDocument')"
     ></v-list-item>
     <v-list-item
+      class="item-icon"
       id="clear-document"
       prepend-icon="mdi-refresh"
       title="Clear current document"
@@ -143,6 +145,7 @@ onMounted(() => {
       @click="$emit('clearDocument')"
     ></v-list-item>
     <v-list-item
+      class="item-icon"
       id="clear-all-documents"
       prepend-icon="mdi-delete"
       title="Clear all documents"
@@ -153,6 +156,7 @@ onMounted(() => {
     <!-- <v-text-field v-model="searchText" label="Search chats" variant="outlined"></v-text-field> -->
     <div aria-label="List of documents">
       <v-list-item
+        class="item-icon"
         v-for="(session, i) in shownSessions"
         prepend-icon="mdi-file-document"
         :id="'document-list-item' + i"
@@ -171,5 +175,8 @@ onMounted(() => {
 <style scoped>
 .is-highlighted {
   background-color: #eceaea;
+}
+.item-icon :deep(.v-icon) {
+  opacity: 0.75;
 }
 </style>

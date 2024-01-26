@@ -1339,7 +1339,7 @@ const { smAndDown } = useDisplay()
 <template>
   <v-app class="main-class">
     <div role="region" aria-labelledby="navgiation-title">
-      <v-navigation-drawer v-model="drawer" temporary>
+      <v-navigation-drawer class="nav-class" v-model="drawer" temporary>
         <sidebar-items
           :sessions="sessions"
           :activeSession="activeSession"
@@ -1427,6 +1427,10 @@ const { smAndDown } = useDisplay()
 .main-class {
   background: #ffffff;
   overflow-y: hidden;
+  /* filter: invert(1); */
+}
+.nav-class {
+  color: black;
 }
 .card-title {
   display: block;
