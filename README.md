@@ -15,6 +15,9 @@ As it uses Microsoft Azure OpenAI Services and AI Speech Services three variable
 - AZURE_SPEECH_API_KEY to use AI Speech Services
 - AZURE_SPEECH_REGION to use AI Speech Services
 
+## License
+This software is released under the terms of the [GNU General Public License](https://www.gnu.org/licenses/gpl-3.0.html).
+
 ## Setup
 Make sure to install the dependencies:
 ```bash
