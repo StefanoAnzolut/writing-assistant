@@ -1,10 +1,10 @@
 # Writing Assistant
-This app has been developed as a text and speech-based writing assistance prototype “Writing Assistant” built on GPT-4 to create first structured drafts, converse about the document, and simplify the editing and formatting process.
+This app has been developed as a text and speech-based writing assistance prototype “Writing Assistant” built on OpenAIs GPT models to create first structured drafts, converse about the document, and simplify the editing and formatting process.
 
 
 *It is desiged to facilitate the scientific writing experience for users with a visual impairment.*
 
-It provides the ability to interact with a conversational chatbot using GPT-3.5Turbo and GPT-4) and an accessible text editor ([A11yFirst CKEditor](https://github.com/a11yfirst/distribution)) through a simple and accessible interface. 
+It provides the ability to interact with a conversational chatbot (using GPT-3.5 Turbo and GPT-4) and an accessible text editor ([A11yFirst CKEditor](https://github.com/a11yfirst/distribution)) through a simple and accessible interface. 
 
 ![image](https://github.com/StefanoAnzolut/writing-assistant/assets/45556885/47870af3-d1e0-4477-941c-bda0baf59263)
 
